@@ -69,5 +69,5 @@ python examples/escape-replay/run_demo.py
    - Invariant 2: Exact `1:1` newline preservation
    - Invariant 3: Positive detection outside comments
    - Invariant 4: Default ignore glob filtering
-4. **Never weaken gates to pass checks**: Do not delete/skip assertions, widen ignore globs arbitrarily, or silence errors with `except Exception: pass`. Follow [TESTING.md](TESTING.md) and ship every escape fix with a reproducible regression test (and ideally a scenario in `src/unrig/replay.py`).
+4. **Never weaken gates & pass rule quality floors**: Do not delete/skip assertions, widen ignore globs arbitrarily, or silence errors with `except Exception: pass`. Follow [TESTING.md](TESTING.md) (including the **`>= 80%` static rule precision floor** and **prefilter AST fan-out budget** for new/relaxed rules), and ship every escape fix with a reproducible regression test.
 5. **Licensing**: By submitting a PR, you agree that your contribution is licensed under the repository's Apache-2.0 [LICENSE](LICENSE).

@@ -147,10 +147,23 @@ def _is_noop_stmt(stmt: ast.stmt) -> bool:
     return False
 
 
+def python_ast_prefilter(rel_path: str, raw_source: str) -> bool:
+    """Fast-token gate: skip `ast.parse` on clean Python modules lacking target tokens."""
+    if _is_test_path(rel_path) and "def test_" in raw_source:
+        return True
+    return (
+        "assert" in raw_source
+        or "except" in raw_source
+        or "NotImplementedError" in raw_source
+    )
+
+
 def _scan_python_ast(
     rel_path: str, raw_source: str
 ) -> list[tuple[int, str, str, str]] | None:
     """Return list of `(line_no, rule_id, signature, message)` or `None` on SyntaxError."""
+    if not python_ast_prefilter(rel_path, raw_source):
+        return []
     try:
         tree = ast.parse(raw_source)
     except SyntaxError:
