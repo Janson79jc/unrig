@@ -1,0 +1,43 @@
+# Unrig Level 0 Gate Configuration
+# Commit this file and .unrig/ to lock L0 integrity in git.
+version: 1
+
+protected_l0_files:
+  - .unrig.yaml
+  - .unrig/ratchet.json
+  - .unrig/PROTOCOL.md
+  - .unrig/blind_auditor_prompt.md
+
+reports:
+  require_reports: false
+  forbid_skipped: true
+  junit_globs:
+    - "**/target/surefire-reports/TEST-*.xml"
+    - "**/test-results/*.xml"
+    - "**/junit*.xml"
+    - "**/*-junit.xml"
+  required_tests: {}
+  privilege_log_tokens:
+    - "--no-verify"
+    - "gate.mode=maintenance"
+
+runtime_proof_artifacts: []
+
+diff_checks:
+  enabled: true
+  baseline: "HEAD~1"
+  ignore_globs:
+    - "**/node_modules/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/target/**"
+    - "**/.venv/**"
+  # Optional team-specific forbidden patterns (regex matched against comment-blanked added lines):
+  # forbidden_patterns:
+  #   - id: "NO-FLOAT-MONEY"
+  #     pattern: "\\bfloat\\b"
+  #     message: "Avoid float for financial fields; use Decimal."
+  forbidden_patterns: []
+
+ratchet_file: ".unrig/ratchet.json"
+shell_write_redirect_guards: true
