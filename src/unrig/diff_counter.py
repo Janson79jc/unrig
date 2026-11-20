@@ -157,6 +157,7 @@ def _scan_python_ast(
         return None
 
     occurrences: list[tuple[int, str, str, str]] = []
+    abstract_raise_lines: set[int] = set()
     is_test = _is_test_path(rel_path)
 
     for node in ast.walk(tree):
@@ -234,14 +235,9 @@ def _scan_python_ast(
 
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if _is_abstractmethod(node):
-                # Remove NotImplementedError findings strictly belonging to direct body of @abstractmethod
-                body_lines = {
-                    s.lineno for s in node.body if isinstance(s, ast.Raise)
-                }
-                occurrences = [
-                    occ for occ in occurrences
-                    if not (occ[1] == "PLACEHOLDER-STUB" and occ[0] in body_lines)
-                ]
+                for s in node.body:
+                    if isinstance(s, ast.Raise):
+                        abstract_raise_lines.add(s.lineno)
             if is_test and node.name.startswith("test_"):
                 stmts = _body_without_docstring(node.body)
                 if not stmts or all(_is_noop_stmt(s) for s in stmts):
@@ -272,6 +268,12 @@ def _scan_python_ast(
                             f"unverified test {node.name}",
                             f"Test `{node.name}()` contains no assertions or verification calls.",
                         ))
+
+    if abstract_raise_lines:
+        occurrences = [
+            occ for occ in occurrences
+            if not (occ[1] == "PLACEHOLDER-STUB" and occ[0] in abstract_raise_lines)
+        ]
 
     return occurrences
 

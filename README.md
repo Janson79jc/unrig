@@ -126,6 +126,7 @@ When a tool attempts to modify any path in `protected_l0_files` (even via `../` 
 ## Contributing, Agents & Security
 
 - **Contributors & AI Policy**: Read [CONTRIBUTING.md](CONTRIBUTING.md) (human accountability + required PR AI disclosure aligned with modern open-source standards).
+- **Testing Guide & Rigor Standards**: Read [TESTING.md](TESTING.md).
 - **Coding Agents Working on This Repo**: Read [AGENTS.md](AGENTS.md).
 - **Security & Escape Bypass Reports**: Read [SECURITY.md](SECURITY.md).
 - **Community Standards**: Read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

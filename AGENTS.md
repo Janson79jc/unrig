@@ -26,7 +26,7 @@
    - Never write `except Exception: pass` (`unrig verify --root .` will block it).
    - Never skip tests, assert `True`, or lower test thresholds to make CI green.
 4. **`#3600` Contracts for New Formats**: Any extension added to `FORMAT_REGISTRY` must have fixtures added to `tests/test_format_contracts.py` covering all 4 invariants (comment silence, 1:1 newline preservation, positive detection, default ignore globs).
-5. **Reproducible Escape Tests**: Any fix to `l0_guard`, `diff_counter`, or `junit_verifier` must include a real test in `tests/` (and when applicable a sandbox scenario in `replay.py`) proving the bypass fails closed.
+5. **Reproducible Escape Tests**: Any fix to `l0_guard`, `diff_counter`, or `junit_verifier` must follow [TESTING.md](TESTING.md) and include a real test in `tests/` (and when applicable a sandbox scenario in `replay.py`) proving the bypass fails closed.
 6. **Clean-Room Isolation**: Keep all examples, templates, and documentation generic; never reference proprietary or internal organizational codebases.
 
 ---
