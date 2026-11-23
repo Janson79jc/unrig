@@ -1,6 +1,7 @@
 # Unrig
 
 [![Unrig CI](https://github.com/Janson79jc/unrig/actions/workflows/ci.yml/badge.svg)](https://github.com/Janson79jc/unrig/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/unrig.svg)](https://pypi.org/project/unrig/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
 [English](README.md) | **简体中文**
@@ -58,13 +59,14 @@ Coding Agent 很少“干脆地失败”。当测试或校验未通过且缺乏�
 ## 快速上手
 
 ```bash
-# 直接通过 GitHub 一条命令安装：
-pip install git+https://github.com/Janson79jc/unrig.git
+# 从 PyPI 一条命令安装：
+pip install unrig
+# 或免污染全局直接运行 / 隔离安装：
+# uvx unrig replay
+# pipx install unrig
 
-# 或者克隆源码后本地可编辑安装：
-git clone https://github.com/Janson79jc/unrig.git
-cd unrig
-pip install -e .
+# 或从源码克隆安装：
+# git clone https://github.com/Janson79jc/unrig.git && cd unrig && pip install -e .
 
 # 1. 初始化 `.unrig.yaml` 与 `.unrig/` 协议及盲审模板
 #    （加 `--client claude|antigravity|gemini|all` 可直接生成对应客户端 Hook 配置）

@@ -1,6 +1,7 @@
 # Unrig
 
 [![Unrig CI](https://github.com/Janson79jc/unrig/actions/workflows/ci.yml/badge.svg)](https://github.com/Janson79jc/unrig/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/unrig.svg)](https://pypi.org/project/unrig/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
 **English** | [简体中文](README_zh.md)
@@ -58,11 +59,14 @@ Coding agents rarely fail cleanly. Left unchecked on a failing check, agents fre
 ## Quickstart
 
 ```bash
-git clone https://github.com/Janson79jc/unrig.git
-cd unrig
-pip install -e .
-# Or install directly without cloning:
-# pip install git+https://github.com/Janson79jc/unrig.git
+# Install from PyPI (one-liner):
+pip install unrig
+# Or run zero-setup via uvx / install isolated via pipx:
+# uvx unrig replay
+# pipx install unrig
+
+# Or install from source:
+# git clone https://github.com/Janson79jc/unrig.git && cd unrig && pip install -e .
 
 # 1. Initialize `.unrig.yaml` and `.unrig/` protocol/auditor templates
 #    (add `--client claude|antigravity|gemini|all` to generate client hook configs automatically)

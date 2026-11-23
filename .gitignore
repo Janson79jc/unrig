@@ -9,3 +9,7 @@ build/
 .unrig/.cache/
 .DS_Store
 Thumbs.db
+npm/python/
+npm/README.md
+npm/LICENSE
+npm/*.tgz

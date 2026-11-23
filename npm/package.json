@@ -1,0 +1,41 @@
+{
+  "name": "unrig",
+  "version": "0.1.0",
+  "description": "Anti-tamper gates, JUnit/diff verification, and isolated blind review templates for coding agents.",
+  "license": "Apache-2.0",
+  "author": "Chen Jiang",
+  "homepage": "https://github.com/Janson79jc/unrig#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Janson79jc/unrig.git",
+    "directory": "npm"
+  },
+  "bugs": {
+    "url": "https://github.com/Janson79jc/unrig/issues"
+  },
+  "keywords": [
+    "coding-agents",
+    "guardrails",
+    "anti-tamper",
+    "testing",
+    "verification",
+    "claude-code",
+    "cli"
+  ],
+  "bin": {
+    "unrig": "./bin/unrig.js"
+  },
+  "files": [
+    "bin/",
+    "python/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ./scripts/sync-python.js",
+    "test": "node ./scripts/test-npm-bin.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
