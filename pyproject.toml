@@ -36,7 +36,7 @@ Changelog = "https://github.com/Janson79jc/unrig/blob/main/CHANGELOG.md"
 unrig = "unrig.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "setuptools>=68.0"]
 
 [tool.setuptools]
 package-dir = { "" = "src" }
