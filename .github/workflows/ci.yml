@@ -34,7 +34,8 @@ jobs:
 
       - name: Enforce zero runtime third-party dependencies
         if: matrix.python-version == '3.11' || matrix.python-version == '3.12' || matrix.python-version == '3.13'
-        run: python -c "import tomllib, pathlib; data = tomllib.loads(pathlib.Path('pyproject.toml').read_text('utf-8')); assert data.get('project', {}).get('dependencies') == [], f'Expected zero deps, got: {data}'"
+        run: |
+          python -c "import tomllib, pathlib; data = tomllib.loads(pathlib.Path('pyproject.toml').read_text('utf-8')); assert data.get('project', {}).get('dependencies') == [], f'Expected zero deps, got {data}'"
 
       - name: Run full pytest suite
         run: python -m pytest -v
