@@ -1,5 +1,10 @@
 # Unrig
 
+[![Unrig CI](https://github.com/Janson79jc/unrig/actions/workflows/ci.yml/badge.svg)](https://github.com/Janson79jc/unrig/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+
+**English** | [简体中文](README_zh.md)
+
 **Anti-Tamper Gates, Freshness Verification, and Isolated Blind Review for Coding Agents.**
 
 > Software engineering governance CLI (not affiliated with 3D rigging / `UniRig`).
@@ -122,7 +127,7 @@ When any tool attempts to modify a path in `protected_l0_files` (including clien
 | Key | Default | Purpose |
 |---|---|---|
 | `version` | `1` | Schema version |
-| `protected_l0_files` | `[.unrig.yaml, .unrig/ratchet.json, .unrig/PROTOCOL.md, .unrig/blind_auditor_prompt.md]` | Extra paths always merged with immutable L0 defaults + `HEAD:.unrig.yaml` |
+| `protected_l0_files` | `[.unrig.yaml, .unrig/ratchet.json, .unrig/PROTOCOL.md, .unrig/blind_auditor_prompt.md, .claude/settings.json, .agents/hooks.json, .gemini/settings.json]` | Extra paths always merged with immutable L0 defaults + `HEAD:.unrig.yaml` |
 | `reports.require_reports` | `false` | Fail with `[REPORT_MISSING]` if no JUnit XML matches `junit_globs` |
 | `reports.forbid_skipped` | `true` | Fail if `skipped > 0` in any JUnit XML |
 | `reports.junit_globs` | Surefire / `junit*.xml` / `test-results/*.xml` | Glob patterns for JUnit XML discovery |
