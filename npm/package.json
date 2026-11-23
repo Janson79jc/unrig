@@ -1,5 +1,5 @@
 {
-  "name": "unrig",
+  "name": "@janson79jc/unrig",
   "version": "0.1.0",
   "description": "Anti-tamper gates, JUnit/diff verification, and isolated blind review templates for coding agents.",
   "license": "Apache-2.0",
@@ -23,7 +23,11 @@
     "cli"
   ],
   "bin": {
-    "unrig": "./bin/unrig.js"
+    "unrig": "bin/unrig.js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "files": [
     "bin/",

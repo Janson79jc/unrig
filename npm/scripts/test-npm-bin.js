@@ -27,6 +27,14 @@ try {
   assert.ok(fs.existsSync(tgzPath), `Expected packed tarball at ${tgzPath}`);
 
   execFileSync(tarCmd, ["-xzf", tgzPath, "-C", tmpBase]);
+  const packedPkg = JSON.parse(
+    fs.readFileSync(path.join(tmpBase, "package", "package.json"), "utf8")
+  );
+  assert.strictEqual(packedPkg.name, "@janson79jc/unrig");
+  assert.ok(
+    packedPkg.bin && packedPkg.bin.unrig === "bin/unrig.js",
+    `Expected bin.unrig === "bin/unrig.js" in packed package.json, got ${JSON.stringify(packedPkg.bin)}`
+  );
   const binPath = path.join(tmpBase, "package", "bin", "unrig.js");
   assert.ok(fs.existsSync(binPath), "Missing bin/unrig.js in unpacked tarball");
   assert.ok(
