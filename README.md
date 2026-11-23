@@ -2,6 +2,7 @@
 
 [![Unrig CI](https://github.com/Janson79jc/unrig/actions/workflows/ci.yml/badge.svg)](https://github.com/Janson79jc/unrig/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/unrig.svg)](https://pypi.org/project/unrig/)
+[![npm](https://img.shields.io/npm/v/%40janson79jc%2Funrig.svg)](https://www.npmjs.com/package/@janson79jc/unrig)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
 **English** | [简体中文](README_zh.md)
@@ -61,9 +62,11 @@ Coding agents rarely fail cleanly. Left unchecked on a failing check, agents fre
 ```bash
 # Install from PyPI (one-liner):
 pip install unrig
-# Or run zero-setup via uvx / install isolated via pipx:
+# Or run zero-setup via uvx / npx / install isolated via pipx / npm:
 # uvx unrig replay
+# npx @janson79jc/unrig replay
 # pipx install unrig
+# npm install -g @janson79jc/unrig
 
 # Or install from source:
 # git clone https://github.com/Janson79jc/unrig.git && cd unrig && pip install -e .

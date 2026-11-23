@@ -2,6 +2,7 @@
 
 [![Unrig CI](https://github.com/Janson79jc/unrig/actions/workflows/ci.yml/badge.svg)](https://github.com/Janson79jc/unrig/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/unrig.svg)](https://pypi.org/project/unrig/)
+[![npm](https://img.shields.io/npm/v/%40janson79jc%2Funrig.svg)](https://www.npmjs.com/package/@janson79jc/unrig)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
 [English](README.md) | **简体中文**
@@ -61,9 +62,11 @@ Coding Agent 很少“干脆地失败”。当测试或校验未通过且缺乏�
 ```bash
 # 从 PyPI 一条命令安装：
 pip install unrig
-# 或免污染全局直接运行 / 隔离安装：
+# 或免污染全局直接运行 / 隔离安装（支持 uvx / npx / pipx / npm）：
 # uvx unrig replay
+# npx @janson79jc/unrig replay
 # pipx install unrig
+# npm install -g @janson79jc/unrig
 
 # 或从源码克隆安装：
 # git clone https://github.com/Janson79jc/unrig.git && cd unrig && pip install -e .
