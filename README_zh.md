@@ -76,6 +76,9 @@ pip install unrig
 unrig init
 git add .unrig.yaml .unrig/ && git commit -m "chore: initialize unrig Level 0 gates"
 
+# 建议在项目的 `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` 加上一句引导：
+# “请遵守 .unrig/PROTOCOL.md，交付前运行 `unrig verify`，并配合 .unrig/blind_auditor_prompt.md 做独立盲审。”
+
 # 2. 运行验证裁判
 unrig verify
 
@@ -100,10 +103,11 @@ python examples/escape-replay/run_demo.py
 `unrig hook` 会根据 `stdin` JSON 自动识别调用方协议（也可显式指定 `--client claude|antigravity|gemini`）：
 
 - **Claude Code**（`unrig init --client claude` 生成 `.claude/settings.json`）：阻断时以退出码 **`2`** 返回并向 `stderr` 输出原因。
-- **Google Antigravity**（`unrig init --client antigravity` 生成 `.agents/hooks.json`）：`PreToolUse` 通过 `stdout` 返回 `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}`（放行只读查看工具），并在 `Stop` 钩子自动执行 `unrig verify`（不通过则返回 `{"decision": "continue", "reason": "..."}` 打回返工；连续 2 次同因反弹后自动释放交由人类介入）。
+- **Google Antigravity**（桌面 App、IDE 与 `agy` CLI 通用，`unrig init --client antigravity` 生成 `.agents/hooks.json`）：`PreToolUse` 通过 `stdout` 返回 `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}`（放行只读查看工具），并在 `Stop` 钩子自动执行 `unrig verify`（不通过则返回 `{"decision": "continue", "reason": "..."}` 打回返工；连续 2 次同因反弹后自动释放交由人类介入）。*（提示：若所使用的 Antigravity 版本工具名为 `write_file` / `edit_file`，可在 `PreToolUse` 的 `matcher` 正则中一并加上 `write_file|edit_file`。）*
 - **Google Gemini CLI**（`unrig init --client gemini` 生成 `.gemini/settings.json`）：针对 `BeforeTool` 通过 `stdout` 返回 `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}`。
+- **OpenAI Codex CLI**（当前兼容接入方式）：在项目 `AGENTS.md` 中声明遵守 `.unrig/PROTOCOL.md` 并在结束前执行 `unrig verify`；同时可在 `.codex/hooks.json` 的 `PreToolUse`（`matcher` 设为 `"Bash"`）中调用 `unrig hook --client claude`（`unrig` 已支持解析 `tool_name` / `tool_input` 并以退出码 `2` + `stderr` 阻断；所有文件改动在收尾时仍由 `unrig verify` 兜底校验）。
 
-示例（`.claude/settings.json`）：
+示例 `.claude/settings.json`（Codex `.codex/hooks.json` 可把 `matcher` 设为 `"Bash"`）：
 
 ```json
 {

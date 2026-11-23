@@ -76,6 +76,9 @@ pip install unrig
 unrig init
 git add .unrig.yaml .unrig/ && git commit -m "chore: initialize unrig Level 0 gates"
 
+# Optional (recommended): tell your agent in `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`:
+# "Follow .unrig/PROTOCOL.md, run `unrig verify` before finishing, and review diffs with .unrig/blind_auditor_prompt.md."
+
 # 2. Run verification referee
 unrig verify
 
@@ -100,10 +103,11 @@ python examples/escape-replay/run_demo.py
 `unrig hook` auto-detects the caller protocol from `stdin` JSON (or via `--client claude|antigravity|gemini`):
 
 - **Claude Code** (`.claude/settings.json` via `unrig init --client claude`): blocks with exit code **`2`** and prints the reason to `stderr`.
-- **Google Antigravity** (`.agents/hooks.json` via `unrig init --client antigravity`): responds on `stdout` with `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}` for `PreToolUse` (while allowing read-only tools), and gates `Stop` by running `unrig verify` (`{"decision": "continue", "reason": "..."}` up to 2 consecutive identical bounces, then releases cleanly for human escalation).
+- **Google Antigravity** (App, IDE, and `agy` CLI via `unrig init --client antigravity` -> `.agents/hooks.json`): responds on `stdout` with `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}` for `PreToolUse` (while allowing read-only tools), and gates `Stop` by running `unrig verify` (`{"decision": "continue", "reason": "..."}` up to 2 consecutive identical bounces, then releases cleanly for human escalation). *(Tip: if your Antigravity build uses `write_file` / `edit_file` tool names, include `write_file|edit_file` in the `PreToolUse` matcher regex.)*
 - **Google Gemini CLI** (`.gemini/settings.json` via `unrig init --client gemini`): responds on `stdout` with `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}` for `BeforeTool`.
+- **OpenAI Codex CLI** (compatible setup today): put `"Follow .unrig/PROTOCOL.md and run unrig verify before finishing"` in `AGENTS.md`, and optionally wire `.codex/hooks.json` `PreToolUse` (`Bash` matcher) to `unrig hook --client claude` (`unrig` already parses `tool_name` / `tool_input` and exits with code `2` + `stderr` on block; `unrig verify` still guards all file changes at handoff).
 
-Example (`.claude/settings.json`):
+Example `.claude/settings.json` (or `.codex/hooks.json` using `"matcher": "Bash"`):
 
 ```json
 {
