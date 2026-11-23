@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from .cli_core import verify_workspace
+from .cli_core import handle_hook_invocation, verify_workspace
 from .config import load_config
 from .l0_guard import evaluate_hook_payload
 
@@ -168,6 +168,159 @@ def run_builtin_replay_suite() -> list[ReplayCaseResult]:
             "PreToolUse hook must return exit code 2 on L0 write/redirect and 0 on normal code",
             code1 == 2 and code2 == 2 and code3 == 0,
             f"codes=({code1}, {code2}, {code3}) msg={msg1 or msg2}",
+        ))
+
+        # 7. TS-SUPPRESSION-ESCAPE: regex-comment lexing trap + net-new TS/ESLint suppression MUST fail
+        ts_esc = base / "ts_suppression_escape"
+        ts_esc.mkdir()
+        _init_sandbox(ts_esc, {
+            ".unrig.yaml": "version: 1\n",
+            "src/legacy.ts": "// eslint-disable-next-line no-console\nconsole.log('legacy');\n",
+            "src/service.ts": "export const pattern = /\\/\\*/;\nexport const value = 1;\n",
+        })
+        (ts_esc / "src/service.ts").write_text(
+            "export const pattern = /\\/\\*/;\n// @ts-ignore\nexport const value: any = 1;\n",
+            encoding="utf-8",
+        )
+        passed, lines = verify_workspace(ts_esc)
+        results.append(ReplayCaseResult(
+            "TS-SUPPRESSION-ESCAPE",
+            "Net-new TS/ESLint suppression after regex literal trap must be caught without touching legacy debt",
+            (not passed)
+            and any("SUPPRESSION-DIRECTIVE" in ln and "src/service.ts" in ln for ln in lines)
+            and (not any("src/legacy.ts" in ln for ln in lines)),
+            "Blocked net-new TS suppression" if not passed else "ESCAPE: TS suppression bypassed!",
+        ))
+
+        # 8. FOCUSED-TEST-ESCAPE: triple-slash pragma + `.only` test silencing suite MUST fail
+        ft_esc = base / "focused_test_escape"
+        ft_esc.mkdir()
+        _init_sandbox(ft_esc, {
+            ".unrig.yaml": "version: 1\n",
+            "src/mod.ts": "export const v: number = 1;\n",
+            "tests/mod.test.ts": "it('ok', () => { expect(1).toBe(1); });\n",
+        })
+        (ft_esc / "src/mod.ts").write_text("/// @ts-ignore\nexport const v: number = 'bad';\n", encoding="utf-8")
+        (ft_esc / "tests/mod.test.ts").write_text("it.only('ok', () => { expect(1).toBe(1); });\n", encoding="utf-8")
+        passed, lines = verify_workspace(ft_esc)
+        results.append(ReplayCaseResult(
+            "FOCUSED-TEST-ESCAPE",
+            "Triple-slash `@ts-ignore` and `.only` focused test must be caught",
+            (not passed)
+            and any("SUPPRESSION-DIRECTIVE" in ln and "src/mod.ts" in ln for ln in lines)
+            and any("FOCUSED-TEST" in ln and "tests/mod.test.ts" in ln for ln in lines),
+            "Blocked triple-slash pragma and .only test" if not passed else "ESCAPE: focused/triple-slash bypassed!",
+        ))
+
+        # 9. MULTI-CLIENT-HOOK: Antigravity PreToolUse/Stop & Gemini BeforeTool JSON adapters
+        mc = base / "multi_client_hook"
+        mc.mkdir()
+        _init_sandbox(mc, {
+            ".unrig.yaml": "version: 1\n",
+            "tests/test_app.py": "def test_ok():\n    assert 1 + 1 == 2\n",
+        })
+        (mc / "tests/test_app.py").write_text("def test_bad():\n    assert True\n", encoding="utf-8")
+
+        agy_deny_code, agy_deny_out, _ = handle_hook_invocation(json.dumps({
+            "hookEventName": "PreToolUse",
+            "workspacePaths": [str(mc)],
+            "toolCall": {"id": "t1", "name": "write_to_file", "args": {"TargetFile": ".unrig/ratchet.json"}},
+        }))
+        agy_read_code, agy_read_out, _ = handle_hook_invocation(json.dumps({
+            "hookEventName": "PreToolUse",
+            "workspacePaths": [str(mc)],
+            "toolCall": {"id": "t2", "name": "view_file", "args": {"AbsolutePath": str(mc / ".unrig.yaml")}},
+        }))
+        agy_stop_code, agy_stop_out, _ = handle_hook_invocation(json.dumps({
+            "hookEventName": "Stop",
+            "workspacePaths": [str(mc)],
+            "terminationReason": "NO_TOOL_CALL",
+            "continuationActive": False,
+        }))
+        gem_code, gem_out, _ = handle_hook_invocation(json.dumps({
+            "hook_event_name": "BeforeTool",
+            "cwd": str(mc),
+            "tool_name": "run_shell_command",
+            "tool_input": {"command": "git commit -m x --no-verify"},
+        }))
+        mc_ok = (
+            agy_deny_code == 0 and json.loads(agy_deny_out).get("decision") == "deny"
+            and agy_read_code == 0 and json.loads(agy_read_out).get("decision") == "allow"
+            and agy_stop_code == 0 and json.loads(agy_stop_out).get("decision") == "continue"
+            and gem_code == 0 and json.loads(gem_out).get("decision") == "deny"
+        )
+        results.append(ReplayCaseResult(
+            "MULTI-CLIENT-HOOK",
+            "Antigravity PreToolUse/Stop (with read exemption) & Gemini BeforeTool must enforce JSON decisions",
+            mc_ok,
+            "All multi-client JSON adapters enforced cleanly" if mc_ok else "ESCAPE: multi-client adapter mismatch!",
+        ))
+
+        # 10. DUMMY-CONSTANT-RETURN + CLONE-SPAM -> caught, then passes when fixed & parameterized
+        clone_dir = base / "clone_dummy"
+        clone_dir.mkdir()
+        _init_sandbox(clone_dir, {
+            ".unrig.yaml": "version: 1\n",
+            "src/auth.py": "def placeholder():\n    return None\n",
+            "tests/test_auth.py": "def test_seed():\n    assert 1 == 1\n",
+        })
+        (clone_dir / "src/auth.py").write_text(
+            "def verify_token(token: str, user_id: str) -> bool:\n"
+            "    _ = token\n"
+            "    ok = True\n"
+            "    return ok\n",
+            encoding="utf-8",
+        )
+        (clone_dir / "tests/test_auth.py").write_text(
+            "def _case(name: str, expected: int) -> int:\n"
+            "    return len(name) + expected\n\n"
+            "def test_case_1():\n"
+            "    u1 = 'alice'\n"
+            "    v1 = _case(u1, 1)\n"
+            "    assert v1 > 0\n"
+            "    assert isinstance(u1, str)\n\n"
+            "def test_case_2():\n"
+            "    u2 = 'bob'\n"
+            "    v2 = _case(u2, 1)\n"
+            "    assert v2 > 0\n"
+            "    assert isinstance(u2, str)\n\n"
+            "def test_case_3():\n"
+            "    u3 = 'carol'\n"
+            "    v3 = _case(u3, 1)\n"
+            "    assert v3 > 0\n"
+            "    assert isinstance(u3, str)\n",
+            encoding="utf-8",
+        )
+        blocked_cd, lines_cd = verify_workspace(clone_dir)
+        # Refactor cleanly into real check + parameterized test -> must pass
+        (clone_dir / "src/auth.py").write_text(
+            "def verify_token(token: str, user_id: str) -> bool:\n"
+            "    return bool(token.strip() and user_id.strip())\n",
+            encoding="utf-8",
+        )
+        (clone_dir / "tests/test_auth.py").write_text(
+            "import pytest\n\n"
+            "def _case(name: str, expected: int) -> int:\n"
+            "    return len(name) + expected\n\n"
+            "@pytest.mark.parametrize('user', ['alice', 'bob', 'carol'])\n"
+            "def test_cases(user: str):\n"
+            "    val = _case(user, 1)\n"
+            "    assert val > 0\n"
+            "    assert isinstance(user, str)\n",
+            encoding="utf-8",
+        )
+        ok_cd, _ = verify_workspace(clone_dir)
+        cd_ok = (
+            not blocked_cd
+            and any("DUMMY-CONSTANT-RETURN" in ln for ln in lines_cd)
+            and any("CLONE-SPAM" in ln for ln in lines_cd)
+            and ok_cd
+        )
+        results.append(ReplayCaseResult(
+            "DUMMY-AND-CLONE-ESCAPE",
+            "Dummy constant return & 3+ isomorphic test clones must block, then pass once refactored",
+            cd_ok,
+            "Blocked dummy/clones and passed after refactoring" if cd_ok else f"ESCAPE: {lines_cd}",
         ))
 
     return results

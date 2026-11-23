@@ -8,7 +8,7 @@ Related issue: #
 
 - [ ] Bug fix (non-breaking fix for an existing issue)
 - [ ] Gate / escape-bypass hardening (includes reproducible failure -> block regression test)
-- [ ] New language or `.unrig.yaml` capability (includes `#3600` contract tests)
+- [ ] New language or `.unrig.yaml` capability (includes 4-invariant format contract tests)
 - [ ] Documentation / example update
 
 ---
@@ -27,8 +27,9 @@ Related issue: #
 ## Local Preflight & Anti-Tamper Checklist (Required)
 
 - [ ] Ran `python -m pytest -v` locally after the final edit (`0` failures, `0` skipped).
-- [ ] Ran `python -m unrig.cli replay` locally (`6/6` scenarios passed).
+- [ ] Ran `python -m unrig.cli replay` locally (all built-in scenarios passed).
 - [ ] Ran `python -m unrig.cli verify --root .` locally (`[PASS]`, `0` violations).
+- [ ] Ran `python -m unrig.cli ratchet --root . --check` locally (`[PASS]`, no stale slack).
 - [ ] Ran `python examples/escape-replay/run_demo.py` locally (`[PASS]`).
 - [ ] Confirmed zero runtime third-party dependencies added to `pyproject.toml`.
 - [ ] Confirmed zero outbound network calls or telemetry introduced.

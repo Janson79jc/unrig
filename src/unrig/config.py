@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import json
+import re
 from typing import Any
 
 
@@ -17,6 +18,9 @@ DEFAULT_PROTECTED_L0_FILES = (
     ".unrig/ratchet.json",
     ".unrig/PROTOCOL.md",
     ".unrig/blind_auditor_prompt.md",
+    ".claude/settings.json",
+    ".agents/hooks.json",
+    ".gemini/settings.json",
 )
 
 DEFAULT_JUNIT_GLOBS = (
@@ -70,6 +74,9 @@ class DiffChecksConfig:
     baseline: str = "HEAD~1"
     ignore_globs: tuple[str, ...] = DEFAULT_IGNORE_GLOBS
     forbidden_patterns: tuple[ForbiddenPatternRule, ...] = ()
+    clone_warn_threshold: int = 2
+    clone_block_threshold: int = 3
+    clone_min_tokens: int = 15
 
 
 @dataclass(frozen=True)
@@ -176,7 +183,7 @@ def _parse_scalar(raw: str) -> Any:
             k, v = item.split(":", 1)
             out[str(_parse_scalar(k))] = _parse_scalar(v)
         return out
-    if val.lstrip("-").isdigit() and not (val.startswith("0") and len(val) > 1):
+    if re.fullmatch(r"-?(?:0|[1-9]\d*)", val):
         return int(val)
     return val
 
@@ -331,6 +338,16 @@ def _as_str_tuple(raw: Any, fallback: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(str(x) for x in raw if x is not None and str(x).strip())
 
 
+def _as_int(raw: Any, field_name: str, default: int | None = None) -> int | None:
+    if raw is None:
+        return default
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        if isinstance(raw, str) and re.fullmatch(r"-?(?:0|[1-9]\d*)", raw.strip()):
+            return int(raw.strip())
+        raise UnrigConfigError(f"`{field_name}` must be an integer, got {raw!r}.")
+    return raw
+
+
 def load_config(repo_root: Path, config_path: Path | None = None) -> UnrigConfig:
     """Load `.unrig.yaml` from repo root (falls back to clean defaults if absent)."""
     target = config_path or (repo_root / ".unrig.yaml")
@@ -340,7 +357,7 @@ def load_config(repo_root: Path, config_path: Path | None = None) -> UnrigConfig
     raw_text = target.read_text(encoding="utf-8")
     data = parse_simple_yaml(raw_text)
 
-    version = int(data.get("version", 1))
+    version = _as_int(data.get("version"), "version", 1) or 1
     user_protected = _as_str_tuple(data.get("protected_l0_files"), ())
     protected = tuple(
         dict.fromkeys(_norm_rel(p) for p in (*DEFAULT_PROTECTED_L0_FILES, *user_protected))
@@ -377,7 +394,7 @@ def load_config(repo_root: Path, config_path: Path | None = None) -> UnrigConfig
             artifacts.append(
                 RuntimeArtifactRule(
                     path=_norm_rel(str(item["path"])),
-                    max_age_seconds=int(age) if age is not None else None,
+                    max_age_seconds=_as_int(age, "runtime_proof_artifacts[].max_age_seconds", None),
                 )
             )
         else:
@@ -393,11 +410,16 @@ def load_config(repo_root: Path, config_path: Path | None = None) -> UnrigConfig
     for item in forb_raw:
         if not isinstance(item, dict) or not item.get("pattern"):
             raise UnrigConfigError(f"Invalid `forbidden_patterns` entry: {item!r}")
+        raw_pat = str(item["pattern"])
+        try:
+            re.compile(raw_pat)
+        except re.error as exc:
+            raise UnrigConfigError(f"Invalid regex in `forbidden_patterns` ({raw_pat!r}): {exc}") from exc
         forb_rules.append(
             ForbiddenPatternRule(
                 rule_id=str(item.get("id") or "CUSTOM-RULE"),
-                pattern=str(item["pattern"]),
-                message=str(item.get("message") or f"Matched forbidden pattern {item['pattern']}"),
+                pattern=raw_pat,
+                message=str(item.get("message") or f"Matched forbidden pattern {raw_pat}"),
                 paths=_as_str_tuple(item.get("paths"), ()),
             )
         )
@@ -407,6 +429,9 @@ def load_config(repo_root: Path, config_path: Path | None = None) -> UnrigConfig
         baseline=str(diff_raw.get("baseline", "HEAD~1")),
         ignore_globs=_as_str_tuple(diff_raw.get("ignore_globs"), DEFAULT_IGNORE_GLOBS),
         forbidden_patterns=tuple(forb_rules),
+        clone_warn_threshold=_as_int(diff_raw.get("clone_warn_threshold"), "diff_checks.clone_warn_threshold", 2) or 0,
+        clone_block_threshold=_as_int(diff_raw.get("clone_block_threshold"), "diff_checks.clone_block_threshold", 3) or 0,
+        clone_min_tokens=_as_int(diff_raw.get("clone_min_tokens"), "diff_checks.clone_min_tokens", 15) or 0,
     )
 
     return UnrigConfig(

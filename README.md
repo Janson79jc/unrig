@@ -16,17 +16,17 @@ Coding agents rarely fail cleanly. Left unchecked on a failing check, agents fre
   Agent Tool Call (Write / Edit / Bash)
                  │
                  ▼
-  ┌─────────────────────────────┐   exit 2 (block L0 writes, traversal, `> file`, `--no-verify`)
-  │   1. `unrig hook` (L0 Guard)│──────────────────────────────────────────────► BLOCKED
+  ┌─────────────────────────────┐   exit 2 / JSON deny (L0 writes, traversal, `> file`, `--no-verify`)
+  │   1. `unrig hook` (L0 Guard)│────────────────────────────────────────────────► BLOCKED
   └──────────────┬──────────────┘
-                 │ exit 0
+                 │ exit 0 / allow
                  ▼
   ┌─────────────────────────────┐
   │ 2. `unrig verify` Referee   │
   │   • L0 Integrity            │── git `-uall -z` + `HEAD:.unrig.yaml` union + CRLF-normalized SHA-256
-  │   • `#3600` Comment Blanker │── 1:1 newline preservation (Py, JS/TS, Vue, Java, Go, XML, SQL, SH, YAML)
-  │   • `CounterMultiset` Diff  │── net-new delta `(after - before)` + `.unrig/ratchet.json` (`reason` required)
-  │   • JUnit & Runtime Proof   │── `<testsuite>` / `<testsuites>`, `xml_mtime >= src_mtime`, `skipped == 0`
+  │   • Format Comment Blanker  │── 1:1 newline preservation (Py, JS/TS `/regex/`+`${}`, Vue, Java, Go, XML, SQL, SH, YAML)
+  │   • `CounterMultiset` Diff  │── `(after - before)` stubs, `DUMMY-CONSTANT-RETURN`, `CLONE-SPAM`, `TYPE-ESCAPE`, suppressions, `.unrig/ratchet.json`
+  │   • JUnit & Coverage Proof  │── `<testsuite>`/`<testsuites>`, freshness, `skipped == 0`, `skipped_ignored`/`syntax_fallback`/`SHALLOW_HISTORY`
   └──────────────┬──────────────┘
                  │ [PASS]
                  ▼
@@ -39,12 +39,13 @@ Coding agents rarely fail cleanly. Left unchecked on a failing check, agents fre
 
 ## Why Unrig vs. Ordinary Linters / `pre-commit`?
 
-| Failure Mode | Standard Linter / `pre-commit` | Unrig (`v0.1.0`) |
+| Failure Mode | Standard Linter / `pre-commit` | Unrig |
 |---|---|---|
 | Agent edits `.unrig.yaml` or `--no-verify` | Bypassed cleanly | Blocked pre-write (`unrig hook` exit `2`) + detected unstaged via `-uall -z` + `HEAD` union lock |
 | Agent duplicates existing dirty debt in brownfield file | Ignored by line diffs or fails whole legacy file | Caught by `CounterMultiset(after - before)` without touching untouched legacy debt |
-| Agent weakens/skips tests (`assert True`, `skipped=1`) | Compiles & passes CI | Blocked by AST/token stub rules + `forbid_skipped: true` + required method floors |
+| Agent weakens/skips tests (`assert True`, `.only`, `skipped=1`, `@ts-ignore`) | Compiles & passes CI | Blocked by AST/lexical stub, focus, catch & suppression rules + `forbid_skipped: true` + method floors |
 | Agent submits old green `junit.xml` after editing code | Passes file existence check | Blocked as `[REPORT_STALE]` (`xml_mtime < max_source_mtime - 1s`) |
+| Agent fakes passing stubs (`return True`, copy-paste test clones) | Compiles & inflates green test counts | Blocked by `DUMMY-CONSTANT-RETURN` + incremental `CLONE-SPAM` (`Alpha-Normalized` diff clone check) |
 | External runtime dependencies / cloud sync | Heavy install / cloud accounts | Zero third-party deps (Python stdlib only), 100% air-gapped, zero telemetry |
 
 ---
@@ -52,16 +53,28 @@ Coding agents rarely fail cleanly. Left unchecked on a failing check, agents fre
 ## Quickstart
 
 ```bash
+git clone https://github.com/Janson79jc/unrig.git
+cd unrig
 pip install -e .
+# Or install directly without cloning:
+# pip install git+https://github.com/Janson79jc/unrig.git
 
 # 1. Initialize `.unrig.yaml` and `.unrig/` protocol/auditor templates
+#    (add `--client claude|antigravity|gemini|all` to generate client hook configs automatically)
 unrig init
 git add .unrig.yaml .unrig/ && git commit -m "chore: initialize unrig Level 0 gates"
 
 # 2. Run verification referee
 unrig verify
 
-# 3. Verify Unrig's own referee against built-in escape mutations
+# 3. Check or tighten stale `.unrig/ratchet.json` caps as debt is paid down
+unrig ratchet --check
+unrig ratchet --prune
+
+# 4. Inspect local interception ledger (recorded silently on blocks in `.unrig/.cache/events.jsonl`)
+unrig stats --days 7
+
+# 5. Verify Unrig's own referee against built-in escape mutations
 unrig replay
 
 # Optional: run the standalone escape-replay showcase
@@ -70,9 +83,15 @@ python examples/escape-replay/run_demo.py
 
 ---
 
-## Wiring `unrig hook` (`PreToolUse`)
+## Wiring `unrig hook` (`PreToolUse` / `BeforeTool` / `Stop`)
 
-Point your coding-agent client's `PreToolUse` hook to read JSON from stdin and run `unrig hook` (for example, in Claude Code `.claude/settings.json`):
+`unrig hook` auto-detects the caller protocol from `stdin` JSON (or via `--client claude|antigravity|gemini`):
+
+- **Claude Code** (`.claude/settings.json` via `unrig init --client claude`): blocks with exit code **`2`** and prints the reason to `stderr`.
+- **Google Antigravity** (`.agents/hooks.json` via `unrig init --client antigravity`): responds on `stdout` with `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}` for `PreToolUse` (while allowing read-only tools), and gates `Stop` by running `unrig verify` (`{"decision": "continue", "reason": "..."}` up to 2 consecutive identical bounces, then releases cleanly for human escalation).
+- **Google Gemini CLI** (`.gemini/settings.json` via `unrig init --client gemini`): responds on `stdout` with `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}` for `BeforeTool`.
+
+Example (`.claude/settings.json`):
 
 ```json
 {
@@ -83,7 +102,7 @@ Point your coding-agent client's `PreToolUse` hook to read JSON from stdin and r
         "hooks": [
           {
             "type": "command",
-            "command": "unrig hook"
+            "command": "unrig hook --client claude"
           }
         ]
       }
@@ -92,7 +111,9 @@ Point your coding-agent client's `PreToolUse` hook to read JSON from stdin and r
 }
 ```
 
-When a tool attempts to modify any path in `protected_l0_files` (even via `../` traversal, Windows backslashes, shell output redirections like `> .unrig.yaml`, or `git commit --no-verify`), `unrig hook` exits **`2`** and prints an actionable block message to `stderr`.
+When any tool attempts to modify a path in `protected_l0_files` (including client hook configs `.claude/settings.json`, `.agents/hooks.json`, and `.gemini/settings.json`), even via `../` traversal, Windows backslashes, shell output redirections like `> .unrig.yaml`, or `git ... commit/push --no-verify`, `unrig hook` blocks it deterministically.
+
+> **Defense-in-Depth Boundary**: `unrig hook` is the fast pre-execution guardrail against accidental edits and common bypasses at the agent tool layer; `unrig verify` (backed by git working-tree status, `HEAD:.unrig.yaml` union locks, and CRLF-normalized hashes) is the deterministic backstop before acceptance or CI merge.
 
 ---
 
@@ -110,8 +131,11 @@ When a tool attempts to modify any path in `protected_l0_files` (even via `../` 
 | `reports.privilege_log_tokens` | `["--no-verify", "gate.mode=maintenance"]` | Tokens forbidden inside test XML logs / `.txt` outputs |
 | `runtime_proof_artifacts` | `[]` | List of `{path, max_age_seconds}` runtime artifacts verified fresh & non-empty |
 | `diff_checks.enabled` | `true` | Toggle `CounterMultiset(after - before)` incremental scan |
-| `diff_checks.baseline` | `"HEAD~1"` | Git revision baseline (`HEAD` fallback on single-commit repos) |
+| `diff_checks.baseline` | `"HEAD~1"` | Git revision baseline (`HEAD` fallback on single-commit repos; emits `[WARN] [SHALLOW_HISTORY]` on shallow clones) |
 | `diff_checks.forbidden_patterns` | `[]` | Team-specific `{id, pattern, message, paths}` rules matched against comment-blanked code |
+| `diff_checks.clone_warn_threshold` | `2` | Net-new cross-file `Alpha-Normalized` isomorphic blocks before emitting `[WARN] [CLONE-SPAM]` |
+| `diff_checks.clone_block_threshold` | `3` | Net-new cross-file `Alpha-Normalized` isomorphic blocks before blocking with `[FAIL] [CLONE-SPAM]` |
+| `diff_checks.clone_min_tokens` | `15` | Minimum normalized token count for a block to participate in incremental clone detection |
 | `ratchet_file` | `".unrig/ratchet.json"` | JSON ledger requiring non-empty `reason` (>= 3 chars) per grandfathered cap |
 | `shell_write_redirect_guards` | `true` | Inspect shell tool commands in `unrig hook` for L0 redirects / `--no-verify` |
 

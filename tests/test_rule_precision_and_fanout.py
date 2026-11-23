@@ -35,6 +35,26 @@ def test_builtin_rules_meet_precision_floor_on_labeled_corpus() -> None:
         ("src/Main.java", "class Main { void f() { try { a(); } catch (Exception e) {} } }\n", True),
         ("tests/ui.test.ts", "it('blank', () => {});\n", True),
         ("tests/ok.test.ts", "expect(true).toBe(true);\n", True),
+        ("src/catch_bare.ts", "try { work(); } catch {}\n", True),
+        ("src/catch_typed.ts", "try { work(); } catch (err: unknown) {}\n", True),
+        ("tests/skip.spec.ts", "it.skip('broken', () => { expect(1).toBe(1); });\n", True),
+        ("tests/fn.test.ts", "test('blank', async (): Promise<void> => {});\n", True),
+        ("tests/false_taut.test.ts", "expect(false).toBe(false);\n", True),
+        ("src/ts_ignore.ts", "// @ts-ignore\nexport const x: any = 1;\n", True),
+        ("src/triple_slash.ts", "/// @ts-ignore\nexport const x: any = 1;\n", True),
+        ("src/quad_slash.ts", "//// @ts-nocheck\nexport const x = 1;\n", True),
+        ("src/ts_nocheck.ts", "// @ts-nocheck\nexport const x = 1;\n", True),
+        ("src/ts_expect_bare.ts", "// @ts-expect-error\nexport const x: number = 'bad';\n", True),
+        ("src/eslint_dis.ts", "// eslint-disable-next-line @typescript-eslint/no-explicit-any\nexport const x: any = 1;\n", True),
+        ("src/Comp.vue", "<template><!-- eslint-disable vue/no-v-html --></template>\n<script setup lang=\"ts\">\nconst x = 1;\n</script>\n", True),
+        ("tests/focused.test.ts", "it.only('single', () => { expect(1).toBe(1); });\n", True),
+        ("tests/noop.test.ts", "it('console stub', () => { const a = 1; console.log(a); return; });\n", True),
+        ("tests/test_shortcircuit.py", "def test_or_true():\n    assert 1 == 2 or True\n", True),
+        ("tests/test_print_stub.py", "def test_print_only():\n    x = 1 + 1\n    print(x)\n", True),
+        ("tests/bad_ignore.test-d.tsx", "// @ts-ignore\nconst x: number = 'bad';\n", True),
+        ("src/dummy_py_bool.py", "def verify_token(token: str) -> bool:\n    return True\n", True),
+        ("src/dummy_py_evasion.py", "def check_quota(user_id: str) -> bool:\n    _ = user_id\n    ok = True\n    return ok\n", True),
+        ("src/dummy_ts_bool.ts", "export function isAuthorized(req: Request): boolean {\n  return true;\n}\n", True),
         # --- Negative clean holdouts (expect 0 defects) ---
         ("src/math_utils.py", "def add(x: int, y: int) -> int:\n    return x + y\n", False),
         ("src/models.py", "from dataclasses import dataclass\n\n@dataclass\nclass Item:\n    name: str\n    price: int\n", False),
@@ -42,13 +62,33 @@ def test_builtin_rules_meet_precision_floor_on_labeled_corpus() -> None:
         ("src/io_safe.py", "def close_quietly(h):\n    try:\n        h.close()\n    except Exception as ignored:\n        pass\n", False),
         ("src/commented.py", "# assert True\n# except Exception: pass\nVALUE = 10\n", False),
         ("tests/test_real.py", "def test_sum():\n    res = sum([1, 2, 3])\n    assert res == 6\n", False),
+        ("tests/test_custom_matcher.py", "def test_cli(result):\n    result.stdout.fnmatch_lines(['* 1 passed *'])\n", False),
+        ("tests/test_valid_or.py", "def test_or_cond():\n    x = 2\n    assert x == 1 or x == 2\n", False),
         ("src/Clean.java", "class Clean { void f() { try { a(); } catch (Exception ignored) {} } }\n", False),
         ("tests/clean.test.ts", "// expect(true).toBe(true)\nit('sums', () => { expect(1 + 2).toBe(3); });\n", False),
+        ("src/strings_and_regex.ts", "const a = '// @ts-ignore';\nconst b = `/* eslint-disable */ ${1 / 2}`;\nconst re = /\\/\\*/;\nconst ratio = x / y / z;\n", False),
+        ("src/prose_comment.ts", "// Never use @ts-ignore or eslint-disable in production code\nexport const safe = 1;\n", False),
+        ("src/jsdoc_example.ts", "/**\n * Example:\n * // @ts-ignore\n */\nexport const doc = 1;\n", False),
+        ("src/justified_expect_err.ts", "// @ts-expect-error: intentionally testing runtime rejection of invalid payload\nparsePayload({});\n", False),
+        ("src/ignored_typed_catch.ts", "try { close(); } catch (ignored: unknown) {}\n", False),
+        ("src/stream_util.ts", "export const helper = { skip() { return 1; } };\nhelper.skip();\n", False),
+        ("src/eslint_enable.ts", "/* eslint-enable @typescript-eslint/no-explicit-any */\nexport const ok = 1;\n", False),
+        ("tests/smoke.test.ts", "it('parses without throwing', () => { parseInput('{}'); });\n", False),
+        ("tests/generic_smoke.test.ts", "it('generic call', () => { parseTyped<string>('{}'); });\n", False),
+        ("tests/types.test-d.ts", "test('type tests', () => {\n  expectTypeOf<{ a: number }>().toEqualTypeOf<{ a: number }>();\n});\n", False),
+        ("tests/negative_type.test-d.tsx", "// @ts-expect-error\nconst badProp: number = 'err';\n", False),
+        ("tests/expr.test.ts", "it('inline expr', () => expect(1 + 1).toBe(2));\n", False),
+        ("src/abstract_ok.py", "from abc import ABC, abstractmethod\nclass Base(ABC):\n    @abstractmethod\n    def handle(self, req: str) -> bool:\n        return False\n", False),
+        ("src/noop_none_ok.py", "def on_close(reason: str) -> None:\n    return None\n", False),
+        ("src/ignored_param_ok.py", "def default_flag(_ctx: object) -> bool:\n    return False\n", False),
+        ("src/real_logic_ok.py", "def is_valid(token: str) -> bool:\n    return len(token) > 3\n", False),
+        ("src/ts_callback_ok.ts", "export function onTick(tick: number): null {\n  return null;\n}\n", False),
     ]
 
     tp = 0
     fp = 0
     fn = 0
+    clean_total = sum(1 for _, _, exp in labeled_samples if not exp)
     for rel_path, src, expected_defect in labeled_samples:
         ext = "." + rel_path.rsplit(".", 1)[-1]
         spec = FORMAT_REGISTRY[ext]
@@ -63,7 +103,7 @@ def test_builtin_rules_meet_precision_floor_on_labeled_corpus() -> None:
                 fp += 1
 
     assert fn == 0, f"Built-in corpus missed {fn} positive defect(s)"
-    ok, precision, _ = evaluate_rule_budget(tp=tp, fp=fp, clean_ast_parsed=0, total_clean_files=8)
+    ok, precision, _ = evaluate_rule_budget(tp=tp, fp=fp, clean_ast_parsed=0, total_clean_files=clean_total)
     assert ok and precision == 1.0, f"Expected precision >= {PRECISION_FLOOR:.0%}, got {precision:.1%} (TP={tp}, FP={fp})"
 
 
@@ -114,7 +154,7 @@ def test_python_prefilter_bounds_clean_ast_fanout_with_full_recall(monkeypatch: 
 
 
 def test_acceptance_gate_vetoes_noisy_relaxed_rule_regression() -> None:
-    """Verify the acceptance gate rejects #3638-style noise (+45% fanout, 1 TP / 11 FP = 8.3%)."""
+    """Verify the acceptance gate rejects noisy relaxed-rule regressions (+45% fanout, 1 TP / 11 FP = 8.3%)."""
     passed, precision, fanout = evaluate_rule_budget(
         tp=1,
         fp=11,

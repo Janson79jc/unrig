@@ -45,5 +45,8 @@ jobs:
       - name: Run Unrig self-verification
         run: unrig verify --root .
 
+      - name: Run Unrig ratchet tightness check
+        run: unrig ratchet --root . --check
+
       - name: Run Escape-Replay standalone demo
         run: python examples/escape-replay/run_demo.py

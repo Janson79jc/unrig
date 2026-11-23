@@ -188,21 +188,40 @@ def check_l0_integrity(
     return blocking, warnings
 
 
-_FILE_PATH_KEYS = (
+_FILE_PATH_KEYS_LOWER = frozenset({
     "file_path",
+    "filepath",
     "path",
     "target_file",
-    "TargetFile",
-    "AbsolutePath",
-    "filepath",
+    "targetfile",
+    "absolutepath",
+    "absolute_path",
     "destination",
     "new_path",
     "old_path",
-)
+    "notebook_path",
+})
 
-_SHELL_CMD_KEYS = ("command", "CommandLine", "cmd", "script")
+_SHELL_CMD_KEYS_LOWER = frozenset({"command", "commandline", "cmd", "script"})
 
-_NO_VERIFY_RE = re.compile(r"\bgit\s+commit\b[^|;&\n]*\s(?:--no-verify|-n)\b")
+_READ_ONLY_TOOL_NAMES = frozenset({
+    "read",
+    "read_file",
+    "read_many_files",
+    "view_file",
+    "view_file_outline",
+    "view_code_item",
+    "list_dir",
+    "find_by_name",
+    "grep_search",
+    "glob",
+    "grep",
+    "ls",
+})
+
+_SHELL_QUOTE_RE = re.compile(r"'[^'\n]*'|\"(?:\\.|[^\"\\\n])*\"")
+_NO_VERIFY_RE = re.compile(r"\bgit\b[^|;&\n]*\b(?:commit|push|merge)\b[^|;&\n]*\s--no-verify\b")
+_GIT_COMMIT_SHORT_N_RE = re.compile(r"\bgit\b[^|;&\n]*\bcommit\b[^|;&\n]*\s-[a-zA-Z]*n[a-zA-Z]*\b")
 _WRITE_OP_RE = re.compile(
     r"(?:>>?|\btee\b|\bmv\b|\bcp\b|\brm\b|\bdel\b|\bsed\s+-i\b|"
     r"\bOut-File\b|\bSet-Content\b|\bAdd-Content\b|\bCopy-Item\b|\bMove-Item\b|\bRemove-Item\b)",
@@ -210,18 +229,110 @@ _WRITE_OP_RE = re.compile(
 )
 
 
-def _collect_strings(obj: Any, target_keys: tuple[str, ...]) -> list[str]:
+def _strip_shell_quotes(cmd_text: str) -> str:
+    """Replace quoted argument interiors so commit messages like `-m 'fix -n'` do not trigger `-n` guards."""
+    return _SHELL_QUOTE_RE.sub('""', cmd_text)
+
+
+def _matches_no_verify_bypass(cmd_text: str) -> bool:
+    cleaned = _strip_shell_quotes(cmd_text)
+    return bool(_NO_VERIFY_RE.search(cleaned) or _GIT_COMMIT_SHORT_N_RE.search(cleaned))
+
+
+def _collect_strings(obj: Any, target_keys_lower: frozenset[str]) -> list[str]:
     found: list[str] = []
     if isinstance(obj, dict):
         for k, v in obj.items():
-            if k in target_keys and isinstance(v, str) and v.strip():
+            if isinstance(k, str) and k.lower() in target_keys_lower and isinstance(v, str) and v.strip():
                 found.append(v.strip())
             elif isinstance(v, (dict, list)):
-                found.extend(_collect_strings(v, target_keys))
+                found.extend(_collect_strings(v, target_keys_lower))
     elif isinstance(obj, list):
         for item in obj:
-            found.extend(_collect_strings(item, target_keys))
+            found.extend(_collect_strings(item, target_keys_lower))
     return found
+
+
+def extract_hook_tool_name(data: Any) -> str:
+    """Extract tool name from Antigravity (`toolCall.name`) or Claude/Gemini (`tool_name`) payload."""
+    if not isinstance(data, dict):
+        return ""
+    tool_call = data.get("toolCall")
+    if isinstance(tool_call, dict) and isinstance(tool_call.get("name"), str):
+        return tool_call["name"].strip()
+    tool_name = data.get("tool_name")
+    if isinstance(tool_name, str):
+        return tool_name.strip()
+    return ""
+
+
+def detect_hook_client(data: Any, explicit_client: str = "auto") -> str:
+    """Detect hook client protocol (`antigravity`, `gemini`, or `claude`)."""
+    if explicit_client and explicit_client != "auto":
+        return explicit_client
+    if isinstance(data, dict):
+        if any(k in data for k in ("hookEventName", "toolCall", "conversationId", "workspacePaths")):
+            return "antigravity"
+        if data.get("hook_event_name") == "BeforeTool":
+            return "gemini"
+    return "claude"
+
+
+def resolve_hook_repo_root(explicit_root: str | None, data: Any) -> Path:
+    """Resolve repository root from CLI `--root`, hook payload `workspacePaths`/`cwd`, or process cwd."""
+    if explicit_root:
+        return Path(explicit_root).resolve()
+
+    candidates: list[Path] = []
+    if isinstance(data, dict):
+        ws = data.get("workspacePaths")
+        if isinstance(ws, list):
+            for entry in ws:
+                if isinstance(entry, str) and entry.strip():
+                    p = Path(entry.strip())
+                    if p.exists() and p.is_dir():
+                        candidates.append(p.resolve())
+        cwd_val = data.get("cwd")
+        if isinstance(cwd_val, str) and cwd_val.strip():
+            p = Path(cwd_val.strip())
+            if p.exists() and p.is_dir():
+                candidates.append(p.resolve())
+
+    candidates.append(Path.cwd().resolve())
+
+    for start in candidates:
+        for parent in (start, *start.parents):
+            if (parent / ".unrig.yaml").exists() or (parent / ".git").exists():
+                return parent
+    return candidates[0]
+
+
+def format_hook_response(
+    client: str,
+    event_name: str,
+    exit_code: int,
+    message: str,
+    *,
+    stop_continue: bool = False,
+) -> tuple[int, str, str]:
+    """Format `(process_exit_code, stdout, stderr)` for `claude`, `antigravity`, or `gemini`."""
+    if client == "antigravity":
+        if event_name == "Stop":
+            if stop_continue:
+                return 0, json.dumps({"decision": "continue", "reason": message}) + "\n", ""
+            return 0, "{}\n", ""
+        if exit_code == 0:
+            return 0, json.dumps({"decision": "allow"}) + "\n", ""
+        return 0, json.dumps({"decision": "deny", "reason": message}) + "\n", ""
+
+    if client == "gemini":
+        if exit_code == 0:
+            return 0, json.dumps({"decision": "allow"}) + "\n", ""
+        return 0, json.dumps({"decision": "deny", "reason": message}) + "\n", ""
+
+    if exit_code == 0:
+        return 0, "", ""
+    return 2, "", (message + "\n") if message else ""
 
 
 def _command_touches_protected(cmd_text: str, protected_files: tuple[str, ...]) -> str | None:
@@ -241,7 +352,7 @@ def evaluate_hook_payload(
     config: UnrigConfig,
 ) -> tuple[int, str]:
     """
-    Evaluate a `PreToolUse` JSON payload on stdin.
+    Evaluate a `PreToolUse` / `BeforeTool` JSON payload on stdin.
 
     Returns `(exit_code, diagnostic_message)`:
     - `0`: allowed
@@ -256,7 +367,11 @@ def evaluate_hook_payload(
     except json.JSONDecodeError as exc:
         return 2, f"[UNRIG L0 HOOK BLOCKED] Invalid hook JSON payload: {exc}"
 
-    for candidate in _collect_strings(data, _FILE_PATH_KEYS):
+    tool_name = extract_hook_tool_name(data)
+    if tool_name and tool_name.lower() in _READ_ONLY_TOOL_NAMES:
+        return 0, ""
+
+    for candidate in _collect_strings(data, _FILE_PATH_KEYS_LOWER):
         matched = match_protected_path(candidate, repo_root, config.protected_l0_files)
         if matched:
             return 2, (
@@ -264,9 +379,9 @@ def evaluate_hook_payload(
             )
 
     if config.shell_write_redirect_guards:
-        for cmd_text in _collect_strings(data, _SHELL_CMD_KEYS):
-            if _NO_VERIFY_RE.search(cmd_text):
-                return 2, "[UNRIG L0 HOOK BLOCKED] `git commit --no-verify` / `-n` bypass is forbidden."
+        for cmd_text in _collect_strings(data, _SHELL_CMD_KEYS_LOWER):
+            if _matches_no_verify_bypass(cmd_text):
+                return 2, "[UNRIG L0 HOOK BLOCKED] `--no-verify` / `git commit -n` bypass is forbidden."
             touched = _command_touches_protected(cmd_text, config.protected_l0_files)
             if touched:
                 return 2, (

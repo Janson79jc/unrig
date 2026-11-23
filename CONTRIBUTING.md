@@ -15,7 +15,7 @@ Every contribution must preserve these four invariants:
 
 ## AI & Coding Agent Policy
 
-Unrig welcomes AI-assisted contributions. Our policy follows modern open-source standards (similar to `GoogleChrome/modern-web-guidance` and Flutter OSS): **we govern contributor behavior and accountability, not tool choice.**
+Unrig welcomes AI-assisted contributions: **we govern contributor behavior and accountability, not tool choice.**
 
 ### 1. Human Accountability First
 - **Every line must be understood by a human.** You must read, test, and understand every line of diff you submit, and be able to explain design trade-offs during code review.
@@ -29,7 +29,7 @@ Unrig welcomes AI-assisted contributions. Our policy follows modern open-source 
 - Commit trailers such as `Assisted-by: <Tool>` or `Co-authored-by: <Name> <email>` are **encouraged**, especially for verbatim generated blocks, though not strictly hard-blocked by CI.
 
 ### 3. Agent Comment & Review Etiquette
-If a coding agent drafts a GitHub comment or review note on your behalf, prefix the comment clearly so maintainers know the level of human oversight (aligned with `GoogleChrome/modern-web-guidance`):
+If a coding agent drafts a GitHub comment or review note on your behalf, prefix the comment clearly so maintainers know the level of human oversight:
 - `[autonomous]` — Unsteered agent output.
 - `[directed]` — Triggered from a quick human prompt.
 - `[co-designed]` — Shaped through iterative human review/debugging.
@@ -44,12 +44,13 @@ cd unrig
 python -m pip install -e ".[dev]"
 ```
 
-Before opening any PR, run all three local gates and ensure zero failures or skipped tests:
+Before opening any PR, run all local gates and ensure zero failures or skipped tests:
 
 ```bash
 python -m pytest -v
 python -m unrig.cli replay
 python -m unrig.cli verify --root .
+python -m unrig.cli ratchet --root . --check
 ```
 
 If you also touch `examples/escape-replay/`:
@@ -64,7 +65,7 @@ python examples/escape-replay/run_demo.py
 
 1. **Open an issue first for behavioral changes**: New `.unrig.yaml` schema fields, new language analyzers, or semantic policy changes should be discussed briefly before coding.
 2. **Keep PRs focused**: One concern per PR.
-3. **Follow `#3600` contracts for language support**: Adding or modifying an extension in `src/unrig/format_registry.py` requires full coverage in `tests/test_format_contracts.py`:
+3. **Follow the 4-invariant format contracts for language support**: Adding or modifying an extension in `src/unrig/format_registry.py` requires full coverage in `tests/test_format_contracts.py`:
    - Invariant 1: Comment silence (0 false positives inside comments)
    - Invariant 2: Exact `1:1` newline preservation
    - Invariant 3: Positive detection outside comments

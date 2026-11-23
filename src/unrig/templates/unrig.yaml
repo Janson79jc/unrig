@@ -37,6 +37,10 @@ diff_checks:
   #   - id: "NO-FLOAT-MONEY"
   #     pattern: "\\bfloat\\b"
   #     message: "Avoid float for financial fields; use Decimal."
+  # Optional clone detection tuning (Alpha-Normalized net-new blocks across files):
+  # clone_warn_threshold: 2
+  # clone_block_threshold: 3
+  # clone_min_tokens: 15
   forbidden_patterns: []
 
 ratchet_file: ".unrig/ratchet.json"

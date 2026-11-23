@@ -169,3 +169,150 @@ def test_ratchet_requires_reason_and_blocks_exceeding_cap(tmp_path: Path) -> Non
     test_file.write_text("def test_one():\n    assert True\n\ndef test_two():\n    assert True\n", encoding="utf-8")
     findings, _, _ = verify_incremental_diff(tmp_path, cfg)
     assert any(f.rule_id == "TAUTOLOGICAL-ASSERT" for f in findings)
+
+
+def test_ratchet_slack_detection_and_cli_prune(tmp_path: Path) -> None:
+    import subprocess, sys
+    from unrig.cli_core import verify_workspace
+    from unrig.diff_counter import find_ratchet_slack, prune_ratchet
+
+    (tmp_path / ".unrig.yaml").write_text("version: 1\n", encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.ts").write_text("// @ts-ignore\nexport const a: any = 1;\n", encoding="utf-8")
+    (tmp_path / "src" / "b.ts").write_text("export const clean = 1;\n", encoding="utf-8")
+    ratchet = tmp_path / ".unrig" / "ratchet.json"
+    ratchet.parent.mkdir(parents=True)
+    ratchet.write_text(
+        json.dumps({
+            "version": 1,
+            "entries": [
+                {"file": "src/a.ts", "rule": "SUPPRESSION-DIRECTIVE", "count": 3, "reason": "Legacy TS debt."},
+                {"file": "src/b.ts", "rule": "SUPPRESSION-DIRECTIVE", "count": 1, "reason": "Cleaned up file."},
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    cfg = load_config(tmp_path)
+    slacks, errs = find_ratchet_slack(tmp_path, cfg)
+    assert errs == []
+    assert len(slacks) == 2
+    assert [(s.entry.file, s.actual_count) for s in slacks] == [("src/a.ts", 1), ("src/b.ts", 0)]
+
+    # verify_workspace surfaces [RATCHET_SLACK] warning without crashing
+    passed, lines = verify_workspace(tmp_path)
+    assert passed
+    assert any("RATCHET_SLACK" in ln and "src/a.ts" in ln for ln in lines)
+
+    repo_src = str(Path(__file__).resolve().parents[1] / "src")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = repo_src
+
+    r_check_fail = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "ratchet", "--root", str(tmp_path), "--check"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_check_fail.returncode == 1
+    assert "RATCHET_SLACK" in r_check_fail.stdout
+
+    r_prune = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "ratchet", "--root", str(tmp_path), "--prune"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_prune.returncode == 0, r_prune.stdout + r_prune.stderr
+    updated = json.loads(ratchet.read_text(encoding="utf-8"))
+    assert updated["entries"] == [
+        {"file": "src/a.ts", "rule": "SUPPRESSION-DIRECTIVE", "count": 1, "reason": "Legacy TS debt."}
+    ]
+
+    r_check_ok = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "ratchet", "--root", str(tmp_path), "--check"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_check_ok.returncode == 0, r_check_ok.stdout
+    # Confirm prune_ratchet is idempotent
+    slacks_after, _ = prune_ratchet(tmp_path, cfg)
+    assert slacks_after == []
+
+
+def test_junit_child_elements_and_nested_suites_prevent_tamper_and_double_count(tmp_path: Path) -> None:
+    from unrig.junit_verifier import parse_junit_xml, verify_reports_and_artifacts
+
+    # 1. Forged top-level skipped="0" / failures="0" cannot hide <testcase><skipped/></testcase>
+    forged = tmp_path / "forged-junit.xml"
+    forged.write_text(
+        '<testsuite name="s" tests="1" failures="0" errors="0" skipped="0">'
+        '<testcase classname="a.B" name="test_hidden_skip"><skipped message="no"/></testcase>'
+        '</testsuite>',
+        encoding="utf-8",
+    )
+    summary_skip = parse_junit_xml(forged)
+    assert summary_skip.skipped == 1
+    assert summary_skip.testcase_names == frozenset()
+    cfg = load_config(tmp_path)
+    findings, _ = verify_reports_and_artifacts(tmp_path, cfg)
+    assert any("[TESTS_SKIPPED]" in f for f in findings), findings
+
+    forged.write_text(
+        '<testsuite name="s" tests="1" failures="0" errors="0" skipped="0">'
+        '<testcase classname="a.B" name="test_hidden_fail"><failure message="boom"/></testcase>'
+        '</testsuite>',
+        encoding="utf-8",
+    )
+    summary_fail = parse_junit_xml(forged)
+    assert summary_fail.failures == 1
+    findings_fail, _ = verify_reports_and_artifacts(tmp_path, cfg)
+    assert any("[TESTS_FAILED]" in f for f in findings_fail), findings_fail
+
+    # 2. Nested <testsuite> inside <testsuites> aggregates leaf suites once (no parent double-counting)
+    nested = tmp_path / "forged-junit.xml"
+    nested.write_text(
+        '<testsuites>'
+        '<testsuite name="outer" tests="2" failures="0" errors="0" skipped="0">'
+        '<testsuite name="inner_a" tests="1" failures="0" errors="0" skipped="0">'
+        '<testcase classname="a.B" name="test_one"/>'
+        '</testsuite>'
+        '<testsuite name="inner_b" tests="1" failures="0" errors="0" skipped="0">'
+        '<testcase classname="a.B" name="test_two"/>'
+        '</testsuite>'
+        '</testsuite>'
+        '</testsuites>',
+        encoding="utf-8",
+    )
+    summary_nested = parse_junit_xml(nested)
+    assert summary_nested.tests == 2
+    assert "test_one" in summary_nested.testcase_names
+    assert "test_two" in summary_nested.testcase_names
+
+
+def test_config_rejects_bad_int_and_invalid_forbidden_regex(tmp_path: Path) -> None:
+    from unrig.config import UnrigConfigError, parse_simple_yaml
+
+    # Double-minus string "--1" parses as plain string without ValueError crash
+    parsed = parse_simple_yaml("tag: --1\n")
+    assert parsed["tag"] == "--1"
+
+    bad_int = tmp_path / ".unrig.yaml"
+    bad_int.write_text("version: true\n", encoding="utf-8")
+    with pytest.raises(UnrigConfigError, match="version"):
+        load_config(tmp_path)
+
+    bad_clone_thr = tmp_path / ".unrig.yaml"
+    bad_clone_thr.write_text("diff_checks:\n  clone_warn_threshold: oops\n", encoding="utf-8")
+    with pytest.raises(UnrigConfigError, match="clone_warn_threshold"):
+        load_config(tmp_path)
+
+    bad_regex = tmp_path / ".unrig.yaml"
+    bad_regex.write_text(
+        "diff_checks:\n  forbidden_patterns:\n    - id: BAD\n      pattern: \"[unclosed\"\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(UnrigConfigError, match="Invalid regex"):
+        load_config(tmp_path)
+

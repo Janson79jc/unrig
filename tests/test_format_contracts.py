@@ -1,4 +1,4 @@
-"""#3600 Format Registry 4-invariant contract tests across all registered extensions."""
+"""Format Registry 4-invariant contract tests across all registered extensions."""
 
 from __future__ import annotations
 
@@ -79,3 +79,58 @@ def test_invariant_4_default_ignore_globs_filter_vendor_and_build() -> None:
     java_spec = FORMAT_REGISTRY[".java"]
     assert _matches_any_glob("module/target/Foo.java", java_spec.default_ignore_globs)
     assert not _matches_any_glob("module/src/main/Foo.java", java_spec.default_ignore_globs)
+
+    js_spec = FORMAT_REGISTRY[".js"]
+    assert _matches_any_glob("app/public/plugins/vendor/chart.js", js_spec.default_ignore_globs)
+    assert _matches_any_glob("dist/bundle.min.js", js_spec.default_ignore_globs)
+    assert not _matches_any_glob("src/utils/helper.js", js_spec.default_ignore_globs)
+
+    ts_spec = FORMAT_REGISTRY[".ts"]
+    assert _matches_any_glob("src/types/auto-imports.d.ts", ts_spec.default_ignore_globs)
+    assert _matches_any_glob("src/types/components.d.ts", ts_spec.default_ignore_globs)
+    assert not _matches_any_glob("src/utils/math.ts", ts_spec.default_ignore_globs)
+
+
+def test_js_ts_regex_literals_templates_and_jsx_preserve_comment_boundaries() -> None:
+    ts_spec = FORMAT_REGISTRY[".ts"]
+    tsx_spec = FORMAT_REGISTRY[".tsx"]
+    vue_spec = FORMAT_REGISTRY[".vue"]
+    rule = (ForbiddenPatternRule(rule_id="CUSTOM-TOK", pattern=r"\bFORBIDDEN_TOKEN\b", message="no tok"),)
+
+    # 1. Regex with `//`, `'`, `[/]`, and `/*` must not poison quotes or swallow subsequent code
+    ts_regex_src = (
+        "const r1 = /'\\/\\//;\n"
+        "const r2 = /[/]/;\n"
+        "const r3 = /\\/\\*/;\n"
+        "// FORBIDDEN_TOKEN after regex\n"
+        "const ratio = a / b / c; // FORBIDDEN_TOKEN after division\n"
+    )
+    assert scan_source_defects("src/re.ts", ts_regex_src, ts_spec, rule) == []
+    assert blank_comments_for_path("src/re.ts", ts_regex_src).count("\n") == ts_regex_src.count("\n")
+
+    # Code AFTER `/\/\*/` must NOT be blanked as a block comment
+    ts_after_regex = "const r = /\\/\\*/;\nconst bad = FORBIDDEN_TOKEN;\n"
+    hits = scan_source_defects("src/after_re.ts", ts_after_regex, ts_spec, rule)
+    assert len(hits) == 1 and hits[0][0] == 2
+
+    # 2. Nested template `${ /* comment */ }` expressions must have inner comments blanked
+    ts_tpl_src = "const msg = `a ${/* FORBIDDEN_TOKEN */ `b ${// FORBIDDEN_TOKEN\n1}`} c`;\n"
+    assert scan_source_defects("src/tpl.ts", ts_tpl_src, ts_spec, rule) == []
+    assert blank_comments_for_path("src/tpl.ts", ts_tpl_src).count("\n") == ts_tpl_src.count("\n")
+
+    # 3. JSX closing tags `</tag>` must not open regex mode across tags
+    tsx_src = "export const ui = <div>{a}</div><div>{b}</div>; // FORBIDDEN_TOKEN\n"
+    assert scan_source_defects("src/ui.tsx", tsx_src, tsx_spec, rule) == []
+
+    # 4. Vue <template> apostrophe must not poison <script setup lang="ts"> comment blanking
+    vue_src = (
+        "<template>\n"
+        "  <p>It's fine <!-- FORBIDDEN_TOKEN --></p>\n"
+        "</template>\n"
+        "<script setup lang=\"ts\">\n"
+        "// FORBIDDEN_TOKEN\n"
+        "const ok = 1;\n"
+        "</script>\n"
+    )
+    assert scan_source_defects("src/Comp.vue", vue_src, vue_spec, rule) == []
+    assert blank_comments_for_path("src/Comp.vue", vue_src).count("\n") == vue_src.count("\n")

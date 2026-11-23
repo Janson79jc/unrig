@@ -8,6 +8,8 @@ version = "0.1.0"
 description = "Anti-tamper gates, JUnit/diff verification, and isolated blind review templates for coding agents."
 readme = "README.md"
 license = { text = "Apache-2.0" }
+authors = [{ name = "Chen Jiang" }]
+keywords = ["coding-agents", "guardrails", "anti-tamper", "testing", "verification", "cli"]
 requires-python = ">=3.10"
 dependencies = []
 classifiers = [
@@ -23,6 +25,12 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Testing",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Janson79jc/unrig"
+Repository = "https://github.com/Janson79jc/unrig"
+Issues = "https://github.com/Janson79jc/unrig/issues"
+Changelog = "https://github.com/Janson79jc/unrig/blob/main/CHANGELOG.md"
 
 [project.scripts]
 unrig = "unrig.cli:main"

@@ -102,48 +102,60 @@ def compute_max_source_mtime(
     return max_ts, latest_rel
 
 
+def _safe_int_attr(elem: ET.Element, attr: str) -> int:
+    raw = str(elem.attrib.get(attr, "") or "").strip()
+    if not raw:
+        return 0
+    try:
+        return int(raw)
+    except ValueError:
+        return 0
+
+
 def parse_junit_xml(xml_path: Path) -> JUnitReportSummary:
     """Parse `<testsuite>` or `<testsuites>` XML into aggregated totals and executed cases."""
     tree = ET.parse(xml_path)
     root = tree.getroot()
 
     suites: list[ET.Element]
+    all_suite_names: list[str] = []
     if root.tag == "testsuite":
-        suites = [root]
+        all_suites = [root]
+        suites = [s for s in root.findall(".//testsuite") if s.find("testsuite") is None] or [root]
     elif root.tag == "testsuites":
-        suites = list(root.findall(".//testsuite"))
+        all_suites = list(root.findall(".//testsuite"))
+        suites = [s for s in all_suites if s.find("testsuite") is None] or all_suites
     else:
         raise ValueError(f"Unsupported JUnit XML root element <{root.tag}>")
+
+    for s in all_suites:
+        sname = s.attrib.get("name", "").strip()
+        if sname:
+            all_suite_names.append(sname)
 
     tests = 0
     failures = 0
     errors = 0
     skipped = 0
-    suite_names: list[str] = []
     executed_cases: set[str] = set()
 
-    if root.tag == "testsuites" and not suites:
-        tests = int(root.attrib.get("tests", 0))
-        failures = int(root.attrib.get("failures", 0))
-        errors = int(root.attrib.get("errors", 0))
-        skipped = int(root.attrib.get("skipped", 0))
-
-    for suite in suites:
-        sname = suite.attrib.get("name", "").strip()
-        if sname:
-            suite_names.append(sname)
-        tests += int(suite.attrib.get("tests", 0))
-        failures += int(suite.attrib.get("failures", 0))
-        errors += int(suite.attrib.get("errors", 0))
-        skipped += int(suite.attrib.get("skipped", 0))
-
-        for tc in suite.findall(".//testcase"):
+    def _collect_cases(case_elems: list[ET.Element]) -> tuple[int, int, int, int]:
+        c_tests = 0
+        c_failures = 0
+        c_errors = 0
+        c_skipped = 0
+        for tc in case_elems:
+            c_tests += 1
+            if tc.find("skipped") is not None:
+                c_skipped += 1
+                continue
+            if tc.find("failure") is not None:
+                c_failures += 1
+            if tc.find("error") is not None:
+                c_errors += 1
             name = tc.attrib.get("name", "").strip()
             classname = tc.attrib.get("classname", "").strip()
             base_name = name.split("(")[0].split("[")[0].strip()
-            # Only treat as executed if NOT marked skipped
-            if tc.find("skipped") is not None:
-                continue
             if name:
                 executed_cases.add(name)
             if base_name:
@@ -154,6 +166,24 @@ def parse_junit_xml(xml_path: Path) -> JUnitReportSummary:
             if classname and base_name:
                 executed_cases.add(f"{classname}.{base_name}")
                 executed_cases.add(f"{classname}#{base_name}")
+        return c_tests, c_failures, c_errors, c_skipped
+
+    if root.tag == "testsuites" and not suites:
+        c_t, c_f, c_e, c_s = _collect_cases(list(root.findall(".//testcase")))
+        tests = max(_safe_int_attr(root, "tests"), c_t)
+        failures = max(_safe_int_attr(root, "failures"), c_f)
+        errors = max(_safe_int_attr(root, "errors"), c_e)
+        skipped = max(_safe_int_attr(root, "skipped"), c_s)
+
+    for suite in suites:
+        direct_cases = list(suite.findall("./testcase"))
+        if not direct_cases and suite.find("testsuite") is None:
+            direct_cases = list(suite.findall(".//testcase"))
+        c_t, c_f, c_e, c_s = _collect_cases(direct_cases)
+        tests += max(_safe_int_attr(suite, "tests"), c_t)
+        failures += max(_safe_int_attr(suite, "failures"), c_f)
+        errors += max(_safe_int_attr(suite, "errors"), c_e)
+        skipped += max(_safe_int_attr(suite, "skipped"), c_s)
 
     return JUnitReportSummary(
         path=xml_path,
@@ -161,7 +191,7 @@ def parse_junit_xml(xml_path: Path) -> JUnitReportSummary:
         failures=failures,
         errors=errors,
         skipped=skipped,
-        suite_names=tuple(dict.fromkeys(suite_names)),
+        suite_names=tuple(dict.fromkeys(all_suite_names)),
         testcase_names=frozenset(executed_cases),
     )
 
@@ -215,7 +245,10 @@ def verify_reports_and_artifacts(repo_root: Path, config: UnrigConfig) -> tuple[
     by_suite: dict[str, list[JUnitReportSummary]] = {}
 
     for xp in xml_paths:
-        rel_xml = xp.relative_to(repo_root.resolve()).as_posix()
+        try:
+            rel_xml = xp.relative_to(repo_root.resolve()).as_posix()
+        except ValueError:
+            rel_xml = xp.as_posix()
         try:
             summary = parse_junit_xml(xp)
         except Exception as exc:

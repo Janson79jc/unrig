@@ -37,7 +37,7 @@ def test_crlf_and_lf_have_identical_normalized_sha256(tmp_path: Path) -> None:
 
 def test_builtin_replay_suite_all_cases_pass() -> None:
     results = run_builtin_replay_suite()
-    assert len(results) >= 6
+    assert len(results) >= 9
     failures = [r for r in results if not r.passed]
     assert failures == [], f"Replay failures: {failures}"
 
@@ -161,3 +161,329 @@ def test_cli_end_to_end_init_verify_hook_and_replay(tmp_path: Path) -> None:
         text=True,
     )
     assert r_replay.returncode == 0, r_replay.stdout + r_replay.stderr
+
+
+def test_multi_client_init_and_hook_adapters(tmp_path: Path) -> None:
+    repo_src = str(Path(__file__).resolve().parents[1] / "src")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = repo_src
+
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "dev@example.com")
+    _git(tmp_path, "config", "user.name", "Dev")
+
+    r_init = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "init", "--root", str(tmp_path), "--client", "all"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_init.returncode == 0, r_init.stderr
+    assert (tmp_path / ".claude" / "settings.json").exists()
+    assert (tmp_path / ".agents" / "hooks.json").exists()
+    assert (tmp_path / ".gemini" / "settings.json").exists()
+
+    agy_cfg = json.loads((tmp_path / ".agents" / "hooks.json").read_text(encoding="utf-8"))
+    assert "PreToolUse" in agy_cfg["unrig-guard"]
+    assert "Stop" in agy_cfg["unrig-guard"]
+
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-m", "init with all client hooks")
+
+    # Simulate Antigravity launching hook from `.agents/` subdirectory WITHOUT `--root`
+    agents_dir = tmp_path / ".agents"
+    r_agy_deny = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "hook"],
+        cwd=str(agents_dir),
+        input=json.dumps({
+            "hookEventName": "PreToolUse",
+            "cwd": str(tmp_path),
+            "toolCall": {"id": "c1", "name": "edit_file", "args": {"Path": ".unrig.yaml"}},
+        }),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_agy_deny.returncode == 0
+    assert json.loads(r_agy_deny.stdout)["decision"] == "deny"
+
+    # Read-only tool (`view_file`) on `.unrig.yaml` must be allowed
+    r_agy_read = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "hook"],
+        cwd=str(agents_dir),
+        input=json.dumps({
+            "hookEventName": "PreToolUse",
+            "workspacePaths": [str(tmp_path)],
+            "toolCall": {"id": "c2", "name": "view_file", "args": {"AbsolutePath": str(tmp_path / ".unrig.yaml")}},
+        }),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_agy_read.returncode == 0
+    assert json.loads(r_agy_read.stdout)["decision"] == "allow"
+
+    # Gemini CLI BeforeTool JSON adapter
+    r_gem_deny = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "hook"],
+        cwd=str(tmp_path),
+        input=json.dumps({
+            "hook_event_name": "BeforeTool",
+            "cwd": str(tmp_path),
+            "tool_name": "write_file",
+            "tool_input": {"file_path": ".unrig/PROTOCOL.md"},
+        }),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_gem_deny.returncode == 0
+    assert json.loads(r_gem_deny.stdout)["decision"] == "deny"
+
+    # Antigravity Stop hook: clean -> {}, dirty -> continue once, continuationActive -> {}
+    r_stop_clean = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "hook"],
+        cwd=str(agents_dir),
+        input=json.dumps({
+            "hookEventName": "Stop",
+            "workspacePaths": [str(tmp_path)],
+            "terminationReason": "NO_TOOL_CALL",
+            "continuationActive": False,
+        }),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_stop_clean.returncode == 0
+    assert json.loads(r_stop_clean.stdout) == {}
+
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_bad.py").write_text("def test_x():\n    assert True\n", encoding="utf-8")
+
+    r_stop_dirty = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "hook"],
+        cwd=str(agents_dir),
+        input=json.dumps({
+            "hookEventName": "Stop",
+            "workspacePaths": [str(tmp_path)],
+            "terminationReason": "NO_TOOL_CALL",
+            "continuationActive": False,
+        }),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_stop_dirty.returncode == 0
+    stop_res = json.loads(r_stop_dirty.stdout)
+    assert stop_res["decision"] == "continue"
+    assert "TAUTOLOGICAL-ASSERT" in stop_res["reason"]
+
+    # Second bounce in same turn (continuationActive=True) or USER_CANCELED must allow stop
+    r_stop_loop_guard = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "hook"],
+        cwd=str(agents_dir),
+        input=json.dumps({
+            "hookEventName": "Stop",
+            "workspacePaths": [str(tmp_path)],
+            "terminationReason": "NO_TOOL_CALL",
+            "continuationActive": True,
+        }),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_stop_loop_guard.returncode == 0
+    assert json.loads(r_stop_loop_guard.stdout) == {}
+
+
+def test_local_interception_log_stats_and_git_cleanliness(tmp_path: Path) -> None:
+    repo_src = str(Path(__file__).resolve().parents[1] / "src")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = repo_src
+
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "dev@example.com")
+    _git(tmp_path, "config", "user.name", "Dev")
+
+    subprocess.run([sys.executable, "-m", "unrig.cli", "init", "--root", str(tmp_path)], env=env, check=True, capture_output=True)
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-m", "init")
+
+    # Passing verify writes zero events
+    r_pass = subprocess.run([sys.executable, "-m", "unrig.cli", "verify", "--root", str(tmp_path)], env=env, capture_output=True, text=True)
+    assert r_pass.returncode == 0
+    assert not (tmp_path / ".unrig" / ".cache" / "events.jsonl").exists()
+
+    # 1. Claude hook deny
+    subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "hook", "--root", str(tmp_path)],
+        input=json.dumps({"tool_name": "Write", "tool_input": {"file_path": ".unrig.yaml"}}),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    # 2. Verify block on dirty test stub
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_bad.py").write_text("def test_stub():\n    pass\n", encoding="utf-8")
+    subprocess.run([sys.executable, "-m", "unrig.cli", "verify", "--root", str(tmp_path)], env=env, capture_output=True, text=True)
+
+    # `.unrig/.cache/` must self-ignore in git even when repo has no root `.gitignore`
+    gs = subprocess.run(["git", "status", "--porcelain", "-uall"], cwd=str(tmp_path), capture_output=True, text=True, check=True)
+    assert ".unrig/.cache" not in gs.stdout
+
+    r_stats = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "stats", "--root", str(tmp_path), "--days", "7"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_stats.returncode == 0
+    assert "Total intercepted: 2" in r_stats.stdout
+    assert "L0_HOOK_BLOCK" in r_stats.stdout
+    assert "EMPTY-TEST-STUB" in r_stats.stdout
+
+    r_clear = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "stats", "--root", str(tmp_path), "--clear"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_clear.returncode == 0
+    assert not (tmp_path / ".unrig" / ".cache" / "events.jsonl").exists()
+
+
+def test_antigravity_stop_hook_releases_after_identical_bounce_limit(tmp_path: Path) -> None:
+    repo_src = str(Path(__file__).resolve().parents[1] / "src")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = repo_src
+
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "dev@example.com")
+    _git(tmp_path, "config", "user.name", "Dev")
+
+    subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "init", "--root", str(tmp_path), "--client", "antigravity"],
+        env=env,
+        check=True,
+        capture_output=True,
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_bad.py").write_text("def test_ok():\n    assert 1 == 1\n", encoding="utf-8")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-m", "init")
+
+    # Introduce a blocking defect
+    (tmp_path / "tests" / "test_bad.py").write_text("def test_bad():\n    assert True\n", encoding="utf-8")
+
+    stop_payload = json.dumps({
+        "hookEventName": "Stop",
+        "conversationId": "conv-stop-loop-1",
+        "workspacePaths": [str(tmp_path)],
+        "terminationReason": "NO_TOOL_CALL",
+        "continuationActive": False,
+    })
+
+    # First 2 identical Stop triggers bounce with continue
+    for _ in range(2):
+        r = subprocess.run(
+            [sys.executable, "-m", "unrig.cli", "hook"],
+            input=stop_payload,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert r.returncode == 0
+        assert json.loads(r.stdout)["decision"] == "continue"
+
+    # 3rd identical Stop trigger releases for human escalation and logs escalated
+    r_release = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "hook"],
+        input=stop_payload,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_release.returncode == 0
+    assert json.loads(r_release.stdout) == {}
+
+    r_stats = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "stats", "--root", str(tmp_path)],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert "escalated" in r_stats.stdout
+
+    # Once clean, Stop resets bounce counter
+    (tmp_path / "tests" / "test_bad.py").write_text("def test_ok():\n    assert 1 == 1\n", encoding="utf-8")
+    r_clean = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "hook"],
+        input=stop_payload,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_clean.returncode == 0
+    assert json.loads(r_clean.stdout) == {}
+
+
+def test_hook_blocks_noverify_evasion_variants_and_protects_client_hook_files(tmp_path: Path) -> None:
+    from unrig.config import load_config
+    from unrig.l0_guard import evaluate_hook_payload
+
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "dev@example.com")
+    _git(tmp_path, "config", "user.name", "Dev")
+
+    repo_src = str(Path(__file__).resolve().parents[1] / "src")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = repo_src
+    subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "init", "--root", str(tmp_path), "--client", "all"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-m", "baseline")
+    cfg = load_config(tmp_path)
+
+    # Blocked bypass variants
+    for bad_cmd in (
+        "git -C . commit --no-verify -m x",
+        "git -c user.name=bot commit -n -m x",
+        'git commit -nm "bypass"',
+        "git push --no-verify origin main",
+    ):
+        code, msg = evaluate_hook_payload(
+            json.dumps({"tool_name": "Bash", "tool_input": {"command": bad_cmd}}),
+            tmp_path,
+            cfg,
+        )
+        assert code == 2, f"Expected block for {bad_cmd!r}, got {code}"
+        assert "--no-verify" in msg
+
+    # Benign commands must NOT false-positive (quoted -n text & git push -n dry-run)
+    for ok_cmd in (
+        'git commit -m "fix -n edge case in cli"',
+        "git push -n origin main",
+    ):
+        code, msg = evaluate_hook_payload(
+            json.dumps({"tool_name": "Bash", "tool_input": {"command": ok_cmd}}),
+            tmp_path,
+            cfg,
+        )
+        assert code == 0, f"Unexpected block for {ok_cmd!r}: {msg}"
+
+    # All 3 client hook config files are protected L0 targets even without explicit .unrig.yaml listing
+    for hook_path in (".agents/hooks.json", ".claude/settings.json", ".gemini/settings.json"):
+        code, msg = evaluate_hook_payload(
+            json.dumps({"tool_name": "Write", "tool_input": {"file_path": hook_path}}),
+            tmp_path,
+            cfg,
+        )
+        assert code == 2, f"Expected hook protection for {hook_path}"
+        assert hook_path in msg
+
+

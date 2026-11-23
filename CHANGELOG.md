@@ -5,19 +5,23 @@ All notable changes to **Unrig** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — Unreleased (Level 0 Core)
+## [0.1.0] — 2026-11-24 (Level 0 Core)
 
 ### Added
-- Pure-stdlib Python `>=3.10` CLI (`unrig init`, `unrig hook`, `unrig verify`, `unrig replay`) with zero third-party runtime dependencies and zero telemetry.
-- **L0 Anti-Tamper Guard** (`l0_guard.py`):
-  - `PreToolUse` stdin JSON hook returning exit code `2` on protected L0 path mutations, path traversal, shell redirects, and `git commit --no-verify`.
+- Pure-stdlib Python `>=3.10` CLI (`unrig init`, `unrig hook`, `unrig verify`, `unrig replay`, `unrig ratchet`, `unrig stats`) with zero third-party runtime dependencies and zero telemetry.
+- **Local Interception Ledger** (`cli_core.py`): appends local-only block/deny/continue records to self-gitignored `.unrig/.cache/events.jsonl` and exposes `unrig stats [--days N] [--clear]`.
+- **L0 Anti-Tamper Guard & Multi-Client Hook Adapters** (`l0_guard.py`, `cli_core.py`):
+  - Auto-detects Claude Code (`PreToolUse` exit `2` + `stderr`), Google Antigravity (`PreToolUse` JSON `allow`/`deny` + `Stop` verification `continue` gate with `continuationActive` & identical-reason bounce cap for clean human escalation + `workspacePaths`/`cwd` root resolution), and Gemini CLI (`BeforeTool` JSON `allow`/`deny`), while decoding/encoding hook and CLI stdio strictly as UTF-8 and exempting read-only inspection tools (`view_file`, `read_file`, etc.).
+  - `unrig init --client claude|antigravity|gemini|all` scaffolds ready-to-use client hook configurations, and `DEFAULT_PROTECTED_L0_FILES` automatically protects `.claude/settings.json`, `.agents/hooks.json`, and `.gemini/settings.json` alongside `.unrig.yaml` / `.unrig/`.
+  - Blocks protected L0 path mutations, path traversal, shell redirects, and `git ... commit/push/merge --no-verify` / combined short `-n` flags (`git commit -nm`, `git -C ... commit --no-verify`, without false-positives on quoted `-m` text or `git push -n`).
   - Cross-platform `git -c core.quotepath=false status --porcelain -uall -z` parsing (`MUT-T01` unstaged ` M` and `MUT-W03` nested untracked directory protection).
   - Union locking against `HEAD:.unrig.yaml` + immutable `DEFAULT_PROTECTED_L0_FILES` (blocks attempts to disarm gates via `protected_l0_files: []`).
-- **Brownfield Incremental CounterMultiset** (`diff_counter.py`) + `#3600` **`FORMAT_REGISTRY`** (`format_registry.py`):
-  - Language-aware newline-preserving comment blanking across Python, JS/TS, Vue, Java, Go, XML/HTML, SQL, Shell, and YAML.
-  - Detects net-new empty test stubs, tautological assertions, silent exception swallowing, placeholder stubs, and custom `.unrig.yaml` `forbidden_patterns`.
-  - Enforces non-empty `reason` and zero count inflation in `.unrig/ratchet.json`.
+- **Brownfield Incremental CounterMultiset** (`diff_counter.py`) + 4-invariant **`FORMAT_REGISTRY`** (`format_registry.py`):
+  - Language-aware newline-preserving comment blanking across Python, JS/TS, Vue, Java, Go, XML/HTML, SQL, Shell, and YAML (including JS/TS `/regex/` literals, nested `${...}` templates, JSX tags, and Vue `<template>`/`<script>` isolation), with default vendor/generated ignore globs covering `**/public/plugins/**`, `**/*.min.{js,mjs,cjs}`, `**/auto-imports*.d.ts`, and `**/components*.d.ts`.
+  - Detects net-new empty/skipped/focused (`FOCUSED-TEST`: `.only`/`fit`/`fdescribe`) and noop-body test stubs, tautological assertions (including `assert ... or True`), parameter-ignoring constant-return stubs (`DUMMY-CONSTANT-RETURN` across Python AST, JS/TS, and Java non-test methods — including local-variable alias evasion while exempting abstract/`default`/interface methods, `@property`/`@overload`, `_`-prefixed parameters, `return None`/`null`, `.pyi`/`.d.ts`, and tests), silent exception swallowing (`catch {}`, typed `catch (e: unknown) {}`), placeholder stubs, JS/TS/Vue lint & type suppression escapes (`@ts-ignore`, `/// @ts-ignore`, `@ts-nocheck`, unjustified `@ts-expect-error`, `eslint-disable*`, inline `eslint ...: "off"`), unsafe TS type casts (`TYPE-ESCAPE`: `as any`, `as unknown as`), cross-file incremental `Alpha-Normalized` clone spam (`CLONE-SPAM` across Python, JS/TS/Vue, and Java: warns at 2, blocks at >= 3 via `diff_checks.{clone_warn_threshold, clone_block_threshold, clone_min_tokens}` unless refactored or explicitly grandfathered in `.unrig/ratchet.json`), and custom `.unrig.yaml` `forbidden_patterns`.
+  - Surfaces verification coverage metrics (`skipped_ignored`, `syntax_fallback`) in `unrig verify` output and emits `[WARN] [SHALLOW_HISTORY]` when a requested baseline falls back on a `.git/shallow` clone.
+  - Enforces non-empty `reason` and zero count inflation in `.unrig/ratchet.json`, plus `[RATCHET_SLACK]` warnings and `unrig ratchet --check` / `--prune` tightening.
 - **JUnit XML Freshness & Runtime Artifacts** (`junit_verifier.py`):
   - Supports `<testsuite>` and `<testsuites>` formats with timestamp freshness checks, zero-skip/failure/error policy, required method floors, privilege-token log scanning, and runtime artifact checks.
-- **Built-in Referee Escape-Replay** (`replay.py`) & standalone runnable demo (`examples/escape-replay/`).
+- **Built-in Referee Escape-Replay** (`replay.py`) & standalone runnable demo (`examples/escape-replay/`), including `TS-SUPPRESSION-ESCAPE`, `FOCUSED-TEST-ESCAPE`, `MULTI-CLIENT-HOOK`, and `DUMMY-AND-CLONE-ESCAPE` (10 scenarios).
 - Community & agent governance suite (`CONTRIBUTING.md`, `AGENTS.md`, `CLAUDE.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `.github/` templates, CI workflow).

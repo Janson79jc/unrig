@@ -8,10 +8,10 @@ Unrig acts as a verification referee for coding agents. Tests in this repository
 
 | Layer | Location | What It Proves |
 |---|---|---|
-| **Format Contracts (`#3600`) & Rule Budgets** | `tests/test_format_contracts.py`, `tests/test_rule_precision_and_fanout.py` | Every registered extension obeys `#3600` 4 invariants (comment silence, exact `1:1` newline preservation, positive detection, ignore-glob filtering); detector rules meet the `>= 80%` Precision Floor and prefilter AST fan-out budget |
-| **Parsers & Verifiers** | `tests/test_junit_and_diff.py` | YAML subset parser, JUnit XML `<testsuite>`/`<testsuites>` freshness, `skipped == 0`, required method floors, runtime proof artifacts, and `.unrig/ratchet.json` `reason`/cap enforcement |
-| **Referee Self-Mutation & Edge Cases** | `tests/test_referee_mutations.py`, `tests/test_edge_cases_and_packaging.py` | Real temporary Git repositories verifying `MUT-T01` unstaged ` M`, `MUT-T02` staged, `MUT-W02` multiset duplicate delta, `MUT-W03` `-uall` nested untracked dir, `R ` renames, `HEAD:.unrig.yaml` union locks, multi-commit `HEAD~1..HEAD` regressions, cross-language JS/TS/Java/Python rules, real `pytest --junitxml`, and clean packaged wheel/target installs |
-| **Escape-Replay Showcase** | `src/unrig/replay.py`, `examples/escape-replay/run_demo.py` | Deterministic self-contained sandboxes executed via `unrig replay` and CI |
+| **Format Contracts & Rule Budgets** | `tests/test_format_contracts.py`, `tests/test_rule_precision_and_fanout.py` | Every registered extension obeys the 4 format invariants (comment silence, exact `1:1` newline preservation, positive detection, ignore-glob filtering, including JS/TS `/regex/` + `${...}` template + Vue isolation); detector rules meet the `>= 80%` Precision Floor and prefilter AST fan-out budget |
+| **Parsers & Verifiers** | `tests/test_junit_and_diff.py` | YAML subset parser, JUnit XML `<testsuite>`/`<testsuites>` freshness, `skipped == 0`, required method floors, runtime proof artifacts, `.unrig/ratchet.json` `reason`/cap enforcement, and `unrig ratchet --check` / `--prune` slack tightening |
+| **Referee Self-Mutation & Edge Cases** | `tests/test_referee_mutations.py`, `tests/test_edge_cases_and_packaging.py` | Real temporary Git repositories verifying `MUT-T01` unstaged ` M`, `MUT-T02` staged, `MUT-W02` multiset duplicate delta, `MUT-W03` `-uall` nested untracked dir, `R ` renames, `HEAD:.unrig.yaml` union locks, multi-commit `HEAD~1..HEAD` regressions, cross-language JS/TS/Vue/Java/Python rules (`SUPPRESSION-DIRECTIVE`, `TYPE-ESCAPE`, `FOCUSED-TEST`, `DUMMY-CONSTANT-RETURN`, `CLONE-SPAM`), `skipped_ignored`/`syntax_fallback`/`SHALLOW_HISTORY` transparency, UTF-8 Hook stdin/stdout, Antigravity `Stop` escalation cap, real `pytest --junitxml`, and clean packaged wheel/target installs |
+| **Escape-Replay Showcase** | `src/unrig/replay.py`, `examples/escape-replay/run_demo.py` | Deterministic self-contained sandboxes (`MUT-T01`..`DUMMY-AND-CLONE-ESCAPE`, 10 scenarios) executed via `unrig replay` and CI |
 
 ---
 
@@ -32,6 +32,7 @@ python examples/escape-replay/run_demo.py
 
 # Self-verification on the Unrig repository itself
 python -m unrig.cli verify --root .
+python -m unrig.cli ratchet --root . --check
 ```
 
 ---
@@ -44,14 +45,14 @@ Matches the `[🛑]` P0-2 checklist in `src/unrig/templates/blind_auditor_prompt
 2. **Real Git / Real Subprocess for Guard Tests**: Changes to `l0_guard.py`, `diff_counter.py`, or CLI exit codes must be tested against real temporary `git init` sandboxes (not monkeypatched `subprocess.run` stubs alone).
 3. **Positive + Negative Pairing**:
    - Every suppression/exemption (e.g., `@abstractmethod`, `catch (Exception ignored) {}`, comment blanking) must prove **both** that legitimate code passes (`0` findings) **and** that non-exempt siblings still fail cleanly.
-4. **New Language Support (`#3600`)**: Adding an extension to `FORMAT_REGISTRY` must add a matching fixture entry to `COMMENT_SNIPPETS_BY_EXT` in `tests/test_format_contracts.py`.
+4. **New Language Support (Format Contracts)**: Adding an extension to `FORMAT_REGISTRY` must add a matching fixture entry to `COMMENT_SNIPPETS_BY_EXT` in `tests/test_format_contracts.py`.
 5. **Packaging Integrity**: Keep `tests/test_edge_cases_and_packaging.py` green so `src/unrig/templates/*` always ships cleanly inside installed packages without depending on `PYTHONPATH=src`.
 
 ---
 
 ## 4. Rule Acceptance Gates (For New or Relaxed Rules)
 
-Borrowed directly from real-world static-analyzer regressions (such as `GoogleChrome/modern-web-guidance-src` #3638), any PR that adds a new heuristic/AST rule or loosens an existing rule's matching boundary must pass two lightweight quantitative gates in `tests/test_rule_precision_and_fanout.py` before merge:
+To guard against real-world static-analyzer regressions (where loosening a rule catches one extra edge case at the cost of noisy false positives or parser spikes), any PR that adds a new heuristic/AST rule or loosens an existing rule's matching boundary must pass two lightweight quantitative gates in `tests/test_rule_precision_and_fanout.py` before merge:
 
 1. **Static Rule Precision Floor (`>= 80%`)**
    - Evaluate the rule across both **positive cases** (true agent defects) and **clean negative holdout cases** (idiomatic production code, comments, string literals, `@abstractmethod`, `ignored` catch handlers).
