@@ -21,6 +21,7 @@ DEFAULT_PROTECTED_L0_FILES = (
     ".claude/settings.json",
     ".agents/hooks.json",
     ".gemini/settings.json",
+    ".codex/hooks.json",
 )
 
 DEFAULT_JUNIT_GLOBS = (

@@ -28,7 +28,7 @@ _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 def _client_hook_files(client: str | None) -> dict[str, str]:
     if not client:
         return {}
-    targets = {"claude", "antigravity", "gemini"} if client == "all" else {client}
+    targets = {"claude", "antigravity", "gemini", "codex"} if client == "all" else {client}
     files: dict[str, str] = {}
     if "claude" in targets:
         files[".claude/settings.json"] = json.dumps({
@@ -46,7 +46,7 @@ def _client_hook_files(client: str | None) -> dict[str, str]:
             "unrig-guard": {
                 "PreToolUse": [
                     {
-                        "matcher": "run_command|write_to_file|replace_file_content|multi_replace_file_content|Write|Edit|MultiEdit|Bash",
+                        "matcher": "run_command|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content|Write|Edit|MultiEdit|Bash",
                         "hooks": [{"type": "command", "command": "unrig hook --client antigravity"}],
                     }
                 ],
@@ -61,6 +61,17 @@ def _client_hook_files(client: str | None) -> dict[str, str]:
                 "BeforeTool": [
                     {
                         "hooks": [{"type": "command", "name": "unrig-guard", "command": "unrig hook --client gemini"}]
+                    }
+                ]
+            }
+        }, indent=2) + "\n"
+    if "codex" in targets:
+        files[".codex/hooks.json"] = json.dumps({
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [{"type": "command", "command": "unrig hook --client codex"}],
                     }
                 ]
             }
@@ -338,7 +349,7 @@ def handle_hook_invocation(
     explicit_client: str = "auto",
 ) -> tuple[int, str, str]:
     """
-    Process a coding-agent hook invocation across Claude Code, Google Antigravity, and Gemini CLI.
+    Process a coding-agent hook invocation across Claude Code, Google Antigravity, Gemini CLI, and Codex CLI.
 
     Returns `(exit_code, stdout_text, stderr_text)`.
     """

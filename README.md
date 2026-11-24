@@ -13,14 +13,28 @@
 
 **Unrig** locks the verification boundary cleanly — **100% offline / zero telemetry / zero third-party runtime dependencies (Python >= 3.10 stdlib only)** and **non-invasive on brownfield repos** (zero source-code marker annotations required).
 
-![Unrig anti-cheat terminal demo](docs/assets/demo.gif)
-
 **Try 10 built-in escape-replay scenarios locally in 5 seconds (zero setup):**
 
 ```bash
 uvx unrig replay
 # or via npm:
 npx @janson79jc/unrig replay
+```
+
+Sample output (`python examples/escape-replay/run_demo.py`):
+
+```text
+Unrig Escape-Replay Standalone Demo:
+  [BLOCKED CLEANLY] MUT-T01 (Unstaged L0 tamper + disarm)
+      -> [FAIL] [L0_TAMPER] .unrig.yaml: Protected L0 gate file '.unrig.yaml' has uncommitted git status [ M].
+  [BLOCKED CLEANLY] MUT-W02 (Duplicate baseline violation)
+      -> [FAIL] [TAUTOLOGICAL-ASSERT] tests/test_legacy.py:5 -> Tautological `assert True` proves nothing. (delta=+1, after=2, before=1)
+  [BLOCKED CLEANLY] MUT-W03 (Nested untracked test stub)
+      -> [FAIL] [EMPTY-TEST-STUB] pkg/nested/test_stub.py:1 -> Empty test stub `test_placeholder()`. (delta=+1, after=1, before=0)
+  [BLOCKED CLEANLY] JUNIT-STALE (Backdated XML report)
+      -> [FAIL] [REPORT_STALE] JUnit report 'test-results/junit.xml' is older than source file 'app.py'.
+  [BLOCKED CLEANLY] HOOK-L0-BLOCK (PreToolUse traversal & --no-verify)
+      -> [UNRIG L0 HOOK BLOCKED] Direct modification to protected L0 file '.unrig/ratchet.json' is forbidden. | [UNRIG L0 HOOK BLOCKED] `--no-verify` / `git commit -n` bypass is forbidden.
 ```
 
 ---
@@ -80,7 +94,7 @@ pip install unrig
 # git clone https://github.com/Janson79jc/unrig.git && cd unrig && pip install -e .
 
 # 1. Initialize `.unrig.yaml` and `.unrig/` protocol/auditor templates
-#    (add `--client claude|antigravity|gemini|all` to generate client hook configs automatically)
+#    (add `--client claude|antigravity|gemini|codex|all` to generate client hook configs automatically)
 unrig init
 git add .unrig.yaml .unrig/ && git commit -m "chore: initialize unrig Level 0 gates"
 
@@ -108,14 +122,14 @@ python examples/escape-replay/run_demo.py
 
 ## Wiring `unrig hook` (`PreToolUse` / `BeforeTool` / `Stop`)
 
-`unrig hook` auto-detects the caller protocol from `stdin` JSON (or via `--client claude|antigravity|gemini`):
+`unrig hook` auto-detects the caller protocol from `stdin` JSON (or via `--client claude|antigravity|gemini|codex`):
 
-- **Claude Code** (`.claude/settings.json` via `unrig init --client claude`): blocks with exit code **`2`** and prints the reason to `stderr`.
-- **Google Antigravity** (App, IDE, and `agy` CLI via `unrig init --client antigravity` -> `.agents/hooks.json`): responds on `stdout` with `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}` for `PreToolUse` (while allowing read-only tools), and gates `Stop` by running `unrig verify` (`{"decision": "continue", "reason": "..."}` up to 2 consecutive identical bounces, then releases cleanly for human escalation). *(Tip: if your Antigravity build uses `write_file` / `edit_file` tool names, include `write_file|edit_file` in the `PreToolUse` matcher regex.)*
+- **Claude Code** (`.claude/settings.json` via `unrig init --client claude`): blocks `Write|Edit|MultiEdit|Bash` with exit code **`2`** and prints the reason to `stderr`.
+- **Google Antigravity** (App, IDE, and `agy` CLI via `unrig init --client antigravity` -> `.agents/hooks.json`): matches `run_command|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content|...`, responds on `stdout` with `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}` for `PreToolUse` (while allowing read-only tools), and gates `Stop` by running `unrig verify` (`{"decision": "continue", "reason": "..."}` up to 2 consecutive identical bounces, then releases cleanly for human escalation).
 - **Google Gemini CLI** (`.gemini/settings.json` via `unrig init --client gemini`): responds on `stdout` with `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}` for `BeforeTool`.
-- **OpenAI Codex CLI** (compatible setup today): put `"Follow .unrig/PROTOCOL.md and run unrig verify before finishing"` in `AGENTS.md`, and optionally wire `.codex/hooks.json` `PreToolUse` (`Bash` matcher) to `unrig hook --client claude` (`unrig` already parses `tool_name` / `tool_input` and exits with code `2` + `stderr` on block; `unrig verify` still guards all file changes at handoff).
+- **OpenAI Codex CLI** (`.codex/hooks.json` via `unrig init --client codex`): hooks `PreToolUse` (`Bash` matcher) to `unrig hook --client codex`, blocking forbidden commands / redirects / `--no-verify` with exit code **`2`** + `stderr` (and pair with `"Follow .unrig/PROTOCOL.md and run unrig verify before finishing"` in `AGENTS.md` so `unrig verify` also catches any file-patching edits at handoff).
 
-Example `.claude/settings.json` (or `.codex/hooks.json` using `"matcher": "Bash"`):
+Example `.claude/settings.json` (`.codex/hooks.json` uses `"matcher": "Bash"` and `"command": "unrig hook --client codex"`):
 
 ```json
 {
@@ -135,7 +149,7 @@ Example `.claude/settings.json` (or `.codex/hooks.json` using `"matcher": "Bash"
 }
 ```
 
-When any tool attempts to modify a path in `protected_l0_files` (including client hook configs `.claude/settings.json`, `.agents/hooks.json`, and `.gemini/settings.json`), even via `../` traversal, Windows backslashes, shell output redirections like `> .unrig.yaml`, or `git ... commit/push --no-verify`, `unrig hook` blocks it deterministically.
+When any tool attempts to modify a path in `protected_l0_files` (including client hook configs `.claude/settings.json`, `.agents/hooks.json`, `.gemini/settings.json`, and `.codex/hooks.json`), even via `../` traversal, Windows backslashes, shell output redirections like `> .unrig.yaml`, or `git ... commit/push --no-verify`, `unrig hook` blocks it deterministically.
 
 > **Defense-in-Depth Boundary**: `unrig hook` is the fast pre-execution guardrail against accidental edits and common bypasses at the agent tool layer; `unrig verify` (backed by git working-tree status, `HEAD:.unrig.yaml` union locks, and CRLF-normalized hashes) is the deterministic backstop before acceptance or CI merge.
 
@@ -146,7 +160,7 @@ When any tool attempts to modify a path in `protected_l0_files` (including clien
 | Key | Default | Purpose |
 |---|---|---|
 | `version` | `1` | Schema version |
-| `protected_l0_files` | `[.unrig.yaml, .unrig/ratchet.json, .unrig/PROTOCOL.md, .unrig/blind_auditor_prompt.md, .claude/settings.json, .agents/hooks.json, .gemini/settings.json]` | Extra paths always merged with immutable L0 defaults + `HEAD:.unrig.yaml` |
+| `protected_l0_files` | `[.unrig.yaml, .unrig/ratchet.json, .unrig/PROTOCOL.md, .unrig/blind_auditor_prompt.md, .claude/settings.json, .agents/hooks.json, .gemini/settings.json, .codex/hooks.json]` | Extra paths always merged with immutable L0 defaults + `HEAD:.unrig.yaml` |
 | `reports.require_reports` | `false` | Fail with `[REPORT_MISSING]` if no JUnit XML matches `junit_globs` |
 | `reports.forbid_skipped` | `true` | Fail if `skipped > 0` in any JUnit XML |
 | `reports.junit_globs` | Surefire / `junit*.xml` / `test-results/*.xml` | Glob patterns for JUnit XML discovery |

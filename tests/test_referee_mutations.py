@@ -182,10 +182,17 @@ def test_multi_client_init_and_hook_adapters(tmp_path: Path) -> None:
     assert (tmp_path / ".claude" / "settings.json").exists()
     assert (tmp_path / ".agents" / "hooks.json").exists()
     assert (tmp_path / ".gemini" / "settings.json").exists()
+    assert (tmp_path / ".codex" / "hooks.json").exists()
 
     agy_cfg = json.loads((tmp_path / ".agents" / "hooks.json").read_text(encoding="utf-8"))
     assert "PreToolUse" in agy_cfg["unrig-guard"]
     assert "Stop" in agy_cfg["unrig-guard"]
+    agy_matcher = agy_cfg["unrig-guard"]["PreToolUse"][0]["matcher"]
+    assert "write_file" in agy_matcher and "edit_file" in agy_matcher
+
+    codex_cfg = json.loads((tmp_path / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+    assert codex_cfg["hooks"]["PreToolUse"][0]["matcher"] == "Bash"
+    assert "codex" in codex_cfg["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
 
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-m", "init with all client hooks")
@@ -239,6 +246,50 @@ def test_multi_client_init_and_hook_adapters(tmp_path: Path) -> None:
     )
     assert r_gem_deny.returncode == 0
     assert json.loads(r_gem_deny.stdout)["decision"] == "deny"
+
+    # Codex CLI PreToolUse Bash adapter (auto-detected via `turn_id` and explicit `--client codex`)
+    r_codex_deny = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "hook"],
+        cwd=str(tmp_path),
+        input=json.dumps({
+            "session_id": "thr_123",
+            "turn_id": "turn_456",
+            "hook_event_name": "PreToolUse",
+            "cwd": str(tmp_path),
+            "tool_name": "Bash",
+            "tool_input": {"command": "git commit -m wip --no-verify"},
+        }),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_codex_deny.returncode == 2
+    assert "[UNRIG L0 HOOK BLOCKED]" in r_codex_deny.stderr
+
+    r_codex_allow = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "hook", "--client", "codex"],
+        cwd=str(tmp_path),
+        input=json.dumps({
+            "hook_event_name": "PreToolUse",
+            "cwd": str(tmp_path),
+            "tool_name": "Bash",
+            "tool_input": {"command": "pytest -q"},
+        }),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_codex_allow.returncode == 0
+    assert r_codex_allow.stdout == "" and r_codex_allow.stderr == ""
+
+    r_codex_stats = subprocess.run(
+        [sys.executable, "-m", "unrig.cli", "stats", "--root", str(tmp_path)],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert r_codex_stats.returncode == 0
+    assert "'codex':" in r_codex_stats.stdout
 
     # Antigravity Stop hook: clean -> {}, dirty -> continue once, continuationActive -> {}
     r_stop_clean = subprocess.run(
@@ -476,8 +527,8 @@ def test_hook_blocks_noverify_evasion_variants_and_protects_client_hook_files(tm
         )
         assert code == 0, f"Unexpected block for {ok_cmd!r}: {msg}"
 
-    # All 3 client hook config files are protected L0 targets even without explicit .unrig.yaml listing
-    for hook_path in (".agents/hooks.json", ".claude/settings.json", ".gemini/settings.json"):
+    # All 4 client hook config files are protected L0 targets even without explicit .unrig.yaml listing
+    for hook_path in (".agents/hooks.json", ".claude/settings.json", ".gemini/settings.json", ".codex/hooks.json"):
         code, msg = evaluate_hook_payload(
             json.dumps({"tool_name": "Write", "tool_input": {"file_path": hook_path}}),
             tmp_path,

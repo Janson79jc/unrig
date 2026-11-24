@@ -170,9 +170,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--force", action="store_true", help="Overwrite existing templates.")
     p_init.add_argument(
         "--client",
-        choices=["claude", "antigravity", "gemini", "all"],
+        choices=["claude", "antigravity", "gemini", "codex", "all"],
         default=None,
-        help="Also generate hook configuration for Claude Code, Google Antigravity, Gemini CLI, or all.",
+        help="Also generate hook configuration for Claude Code, Google Antigravity, Gemini CLI, Codex CLI, or all.",
     )
     p_init.set_defaults(func=_cmd_init)
 
@@ -180,7 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_hook.add_argument("--root", default=None, help="Repository root (default: resolved from payload or cwd).")
     p_hook.add_argument(
         "--client",
-        choices=["auto", "claude", "antigravity", "gemini"],
+        choices=["auto", "claude", "antigravity", "gemini", "codex"],
         default="auto",
         help="Hook protocol adapter (default: auto-detect from stdin JSON).",
     )

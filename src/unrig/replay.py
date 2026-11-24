@@ -243,17 +243,26 @@ def run_builtin_replay_suite() -> list[ReplayCaseResult]:
             "tool_name": "run_shell_command",
             "tool_input": {"command": "git commit -m x --no-verify"},
         }))
+        codex_code, _, codex_err = handle_hook_invocation(json.dumps({
+            "session_id": "thr_demo",
+            "turn_id": "turn_demo",
+            "hook_event_name": "PreToolUse",
+            "cwd": str(mc),
+            "tool_name": "Bash",
+            "tool_input": {"command": "git commit -m x --no-verify"},
+        }))
         mc_ok = (
             agy_deny_code == 0 and json.loads(agy_deny_out).get("decision") == "deny"
             and agy_read_code == 0 and json.loads(agy_read_out).get("decision") == "allow"
             and agy_stop_code == 0 and json.loads(agy_stop_out).get("decision") == "continue"
             and gem_code == 0 and json.loads(gem_out).get("decision") == "deny"
+            and codex_code == 2 and "--no-verify" in codex_err
         )
         results.append(ReplayCaseResult(
             "MULTI-CLIENT-HOOK",
-            "Antigravity PreToolUse/Stop (with read exemption) & Gemini BeforeTool must enforce JSON decisions",
+            "Antigravity PreToolUse/Stop, Gemini BeforeTool, & Codex PreToolUse must enforce hook decisions",
             mc_ok,
-            "All multi-client JSON adapters enforced cleanly" if mc_ok else "ESCAPE: multi-client adapter mismatch!",
+            "All 4 multi-client adapters enforced cleanly" if mc_ok else "ESCAPE: multi-client adapter mismatch!",
         ))
 
         # 10. DUMMY-CONSTANT-RETURN + CLONE-SPAM -> caught, then passes when fixed & parameterized

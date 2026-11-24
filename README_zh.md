@@ -13,14 +13,28 @@
 
 **Unrig** 把验证边界彻底锁死——**100% 离线 / 零遥测 / 零第三方运行时依赖（仅使用 Python >= 3.10 标准库）**，且**对存量老项目零侵入**（无需在业务源码中写任何特殊注解或标记）。
 
-![Unrig 防作弊终端演示](docs/assets/demo.gif)
-
 **5 秒零配置本地试跑 10 个内置逃逸回放场景：**
 
 ```bash
 uvx unrig replay
 # 或使用 npm：
 npx @janson79jc/unrig replay
+```
+
+实测输出示例（`python examples/escape-replay/run_demo.py`）：
+
+```text
+Unrig Escape-Replay Standalone Demo:
+  [BLOCKED CLEANLY] MUT-T01 (Unstaged L0 tamper + disarm)
+      -> [FAIL] [L0_TAMPER] .unrig.yaml: Protected L0 gate file '.unrig.yaml' has uncommitted git status [ M].
+  [BLOCKED CLEANLY] MUT-W02 (Duplicate baseline violation)
+      -> [FAIL] [TAUTOLOGICAL-ASSERT] tests/test_legacy.py:5 -> Tautological `assert True` proves nothing. (delta=+1, after=2, before=1)
+  [BLOCKED CLEANLY] MUT-W03 (Nested untracked test stub)
+      -> [FAIL] [EMPTY-TEST-STUB] pkg/nested/test_stub.py:1 -> Empty test stub `test_placeholder()`. (delta=+1, after=1, before=0)
+  [BLOCKED CLEANLY] JUNIT-STALE (Backdated XML report)
+      -> [FAIL] [REPORT_STALE] JUnit report 'test-results/junit.xml' is older than source file 'app.py'.
+  [BLOCKED CLEANLY] HOOK-L0-BLOCK (PreToolUse traversal & --no-verify)
+      -> [UNRIG L0 HOOK BLOCKED] Direct modification to protected L0 file '.unrig/ratchet.json' is forbidden. | [UNRIG L0 HOOK BLOCKED] `--no-verify` / `git commit -n` bypass is forbidden.
 ```
 
 ---
@@ -80,7 +94,7 @@ pip install unrig
 # git clone https://github.com/Janson79jc/unrig.git && cd unrig && pip install -e .
 
 # 1. 初始化 `.unrig.yaml` 与 `.unrig/` 协议及盲审模板
-#    （加 `--client claude|antigravity|gemini|all` 可直接生成对应客户端 Hook 配置）
+#    （加 `--client claude|antigravity|gemini|codex|all` 可直接生成对应客户端 Hook 配置）
 unrig init
 git add .unrig.yaml .unrig/ && git commit -m "chore: initialize unrig Level 0 gates"
 
@@ -108,14 +122,14 @@ python examples/escape-replay/run_demo.py
 
 ## 接入 Agent 生命周期 Hook（`PreToolUse` / `BeforeTool` / `Stop`）
 
-`unrig hook` 会根据 `stdin` JSON 自动识别调用方协议（也可显式指定 `--client claude|antigravity|gemini`）：
+`unrig hook` 会根据 `stdin` JSON 自动识别调用方协议（也可显式指定 `--client claude|antigravity|gemini|codex`）：
 
-- **Claude Code**（`unrig init --client claude` 生成 `.claude/settings.json`）：阻断时以退出码 **`2`** 返回并向 `stderr` 输出原因。
-- **Google Antigravity**（桌面 App、IDE 与 `agy` CLI 通用，`unrig init --client antigravity` 生成 `.agents/hooks.json`）：`PreToolUse` 通过 `stdout` 返回 `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}`（放行只读查看工具），并在 `Stop` 钩子自动执行 `unrig verify`（不通过则返回 `{"decision": "continue", "reason": "..."}` 打回返工；连续 2 次同因反弹后自动释放交由人类介入）。*（提示：若所使用的 Antigravity 版本工具名为 `write_file` / `edit_file`，可在 `PreToolUse` 的 `matcher` 正则中一并加上 `write_file|edit_file`。）*
+- **Claude Code**（`unrig init --client claude` 生成 `.claude/settings.json`）：对 `Write|Edit|MultiEdit|Bash` 阻断时以退出码 **`2`** 返回并向 `stderr` 输出原因。
+- **Google Antigravity**（桌面 App、IDE 与 `agy` CLI 通用，`unrig init --client antigravity` 生成 `.agents/hooks.json`）：`PreToolUse` 匹配 `run_command|write_file|edit_file|write_to_file|replace_file_content|...`，通过 `stdout` 返回 `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}`（放行只读查看工具），并在 `Stop` 钩子自动执行 `unrig verify`（不通过则返回 `{"decision": "continue", "reason": "..."}` 打回返工；连续 2 次同因反弹后自动释放交由人类介入）。
 - **Google Gemini CLI**（`unrig init --client gemini` 生成 `.gemini/settings.json`）：针对 `BeforeTool` 通过 `stdout` 返回 `{"decision": "allow"}` / `{"decision": "deny", "reason": "..."}`。
-- **OpenAI Codex CLI**（当前兼容接入方式）：在项目 `AGENTS.md` 中声明遵守 `.unrig/PROTOCOL.md` 并在结束前执行 `unrig verify`；同时可在 `.codex/hooks.json` 的 `PreToolUse`（`matcher` 设为 `"Bash"`）中调用 `unrig hook --client claude`（`unrig` 已支持解析 `tool_name` / `tool_input` 并以退出码 `2` + `stderr` 阻断；所有文件改动在收尾时仍由 `unrig verify` 兜底校验）。
+- **OpenAI Codex CLI**（`unrig init --client codex` 生成 `.codex/hooks.json`）：在 `PreToolUse`（`Bash` matcher）调用 `unrig hook --client codex`，阻断危险命令、重定向与 `--no-verify` 并以退出码 **`2`** + `stderr` 返回原因（配合在 `AGENTS.md` 中声明遵守 `.unrig/PROTOCOL.md` 与交付前跑 `unrig verify`，确保补丁/写文件改动在收尾时同样受检）。
 
-示例 `.claude/settings.json`（Codex `.codex/hooks.json` 可把 `matcher` 设为 `"Bash"`）：
+示例 `.claude/settings.json`（Codex `.codex/hooks.json` 使用 `"matcher": "Bash"` 与 `"command": "unrig hook --client codex"`）：
 
 ```json
 {
@@ -135,7 +149,7 @@ python examples/escape-replay/run_demo.py
 }
 ```
 
-只要任何工具试图改动 `protected_l0_files` 中的路径（包括客户端 Hook 配置文件 `.claude/settings.json`、`.agents/hooks.json` 和 `.gemini/settings.json`），哪怕使用 `../` 路径穿越、Windows 反斜杠、`> .unrig.yaml` 等 shell 输出重定向，或 `git ... commit/push --no-verify`，`unrig hook` 都会确定性拦截。
+只要任何工具试图改动 `protected_l0_files` 中的路径（包括客户端 Hook 配置文件 `.claude/settings.json`、`.agents/hooks.json`、`.gemini/settings.json` 和 `.codex/hooks.json`），哪怕使用 `../` 路径穿越、Windows 反斜杠、`> .unrig.yaml` 等 shell 输出重定向，或 `git ... commit/push --no-verify`，`unrig hook` 都会确定性拦截。
 
 > **纵深防御边界**：`unrig hook` 是在 Agent 工具层防误触与常见逃逸的第一道快速护栏；基于 Git 工作区状态、`HEAD:.unrig.yaml` 并集锁与 CRLF 归一化哈希的 `unrig verify` 才是验收与 CI 合入前的最终确定性兜底。
 
@@ -146,7 +160,7 @@ python examples/escape-replay/run_demo.py
 | 配置项 | 默认值 | 用途 |
 |---|---|---|
 | `version` | `1` | 配置 Schema 版本 |
-| `protected_l0_files` | `[.unrig.yaml, .unrig/ratchet.json, .unrig/PROTOCOL.md, .unrig/blind_auditor_prompt.md, .claude/settings.json, .agents/hooks.json, .gemini/settings.json]` | 受保护的 L0 文件列表，始终与不可变默认清单及 `HEAD:.unrig.yaml` 取并集锁定 |
+| `protected_l0_files` | `[.unrig.yaml, .unrig/ratchet.json, .unrig/PROTOCOL.md, .unrig/blind_auditor_prompt.md, .claude/settings.json, .agents/hooks.json, .gemini/settings.json, .codex/hooks.json]` | 受保护的 L0 文件列表，始终与不可变默认清单及 `HEAD:.unrig.yaml` 取并集锁定 |
 | `reports.require_reports` | `false` | 若未匹配到任何 JUnit XML 则以 `[REPORT_MISSING]` 失败 |
 | `reports.forbid_skipped` | `true` | 任意 JUnit XML 中存在跳过用例（含 `<testcase><skipped/></testcase>`）即失败 |
 | `reports.junit_globs` | Surefire / `junit*.xml` / `test-results/*.xml` | JUnit XML 报告发现通配符 |

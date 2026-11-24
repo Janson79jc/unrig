@@ -267,7 +267,7 @@ def extract_hook_tool_name(data: Any) -> str:
 
 
 def detect_hook_client(data: Any, explicit_client: str = "auto") -> str:
-    """Detect hook client protocol (`antigravity`, `gemini`, or `claude`)."""
+    """Detect hook client protocol (`antigravity`, `gemini`, `codex`, or `claude`)."""
     if explicit_client and explicit_client != "auto":
         return explicit_client
     if isinstance(data, dict):
@@ -275,6 +275,9 @@ def detect_hook_client(data: Any, explicit_client: str = "auto") -> str:
             return "antigravity"
         if data.get("hook_event_name") == "BeforeTool":
             return "gemini"
+        transcript_path = str(data.get("transcript_path") or "").replace("\\", "/")
+        if "turn_id" in data or (data.get("hook_event_name") == "PreToolUse" and "/.codex/" in transcript_path):
+            return "codex"
     return "claude"
 
 
@@ -315,7 +318,7 @@ def format_hook_response(
     *,
     stop_continue: bool = False,
 ) -> tuple[int, str, str]:
-    """Format `(process_exit_code, stdout, stderr)` for `claude`, `antigravity`, or `gemini`."""
+    """Format `(process_exit_code, stdout, stderr)` for `claude`, `antigravity`, `gemini`, or `codex`."""
     if client == "antigravity":
         if event_name == "Stop":
             if stop_continue:
@@ -330,6 +333,7 @@ def format_hook_response(
             return 0, json.dumps({"decision": "allow"}) + "\n", ""
         return 0, json.dumps({"decision": "deny", "reason": message}) + "\n", ""
 
+    # Both `claude` and `codex` block PreToolUse on exit code 2 with reason on stderr.
     if exit_code == 0:
         return 0, "", ""
     return 2, "", (message + "\n") if message else ""
