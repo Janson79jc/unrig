@@ -13,28 +13,14 @@
 
 **Unrig** 把验证边界彻底锁死——**100% 离线 / 零遥测 / 零第三方运行时依赖（仅使用 Python >= 3.10 标准库）**，且**对存量老项目零侵入**（无需在业务源码中写任何特殊注解或标记）。
 
+![Unrig 防作弊真实终端演示](docs/assets/demo.gif)
+
 **5 秒零配置本地试跑 10 个内置逃逸回放场景：**
 
 ```bash
 uvx unrig replay
 # 或使用 npm：
 npx @janson79jc/unrig replay
-```
-
-实测输出示例（`python examples/escape-replay/run_demo.py`）：
-
-```text
-Unrig Escape-Replay Standalone Demo:
-  [BLOCKED CLEANLY] MUT-T01 (Unstaged L0 tamper + disarm)
-      -> [FAIL] [L0_TAMPER] .unrig.yaml: Protected L0 gate file '.unrig.yaml' has uncommitted git status [ M].
-  [BLOCKED CLEANLY] MUT-W02 (Duplicate baseline violation)
-      -> [FAIL] [TAUTOLOGICAL-ASSERT] tests/test_legacy.py:5 -> Tautological `assert True` proves nothing. (delta=+1, after=2, before=1)
-  [BLOCKED CLEANLY] MUT-W03 (Nested untracked test stub)
-      -> [FAIL] [EMPTY-TEST-STUB] pkg/nested/test_stub.py:1 -> Empty test stub `test_placeholder()`. (delta=+1, after=1, before=0)
-  [BLOCKED CLEANLY] JUNIT-STALE (Backdated XML report)
-      -> [FAIL] [REPORT_STALE] JUnit report 'test-results/junit.xml' is older than source file 'app.py'.
-  [BLOCKED CLEANLY] HOOK-L0-BLOCK (PreToolUse traversal & --no-verify)
-      -> [UNRIG L0 HOOK BLOCKED] Direct modification to protected L0 file '.unrig/ratchet.json' is forbidden. | [UNRIG L0 HOOK BLOCKED] `--no-verify` / `git commit -n` bypass is forbidden.
 ```
 
 ---
