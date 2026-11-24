@@ -7,13 +7,21 @@
 
 **English** | [简体中文](README_zh.md)
 
-**Anti-Tamper Gates, Freshness Verification, and Isolated Blind Review for Coding Agents.**
+**Anti-cheat for coding agents — deterministic pre-tool hooks, diff/JUnit freshness gates, and isolated blind review.**
 
-> Software engineering governance CLI (not affiliated with 3D rigging / `UniRig`).
-
-Coding agents rarely fail cleanly. Left unchecked on a failing check, agents frequently weaken assertions, skip skipped-test counters, edit gate configs, duplicate existing brownfield debt, or reuse stale test XML reports instead of fixing the underlying bug.
+> Stop coding agents from editing `.unrig.yaml`, sneaking in `assert True` / `@ts-ignore`, passing `--no-verify`, or submitting stale `junit.xml` reports (not affiliated with 3D rigging / `UniRig`).
 
 **Unrig** locks the verification boundary cleanly — **100% offline / zero telemetry / zero third-party runtime dependencies (Python >= 3.10 stdlib only)** and **non-invasive on brownfield repos** (zero source-code marker annotations required).
+
+![Unrig anti-cheat terminal demo](docs/assets/demo.gif)
+
+**Try 10 built-in escape-replay scenarios locally in 5 seconds (zero setup):**
+
+```bash
+uvx unrig replay
+# or via npm:
+npx @janson79jc/unrig replay
+```
 
 ---
 
