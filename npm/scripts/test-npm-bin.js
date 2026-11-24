@@ -44,7 +44,7 @@ try {
 
   const ver = spawnSync(process.execPath, [binPath, "--version"], { encoding: "utf-8" });
   assert.strictEqual(ver.status, 0, ver.stderr);
-  assert.match(ver.stdout, /unrig\s+0\.1\.0/);
+  assert.strictEqual(ver.stdout.trim(), `unrig ${packedPkg.version}`);
 
   const rep = spawnSync(process.execPath, [binPath, "replay"], { encoding: "utf-8" });
   assert.strictEqual(rep.status, 0, rep.stdout + rep.stderr);
